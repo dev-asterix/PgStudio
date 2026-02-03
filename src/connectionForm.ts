@@ -2,6 +2,7 @@ import { Client } from 'pg';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { SSHService } from './services/SSHService';
+import { ConnectionManager } from './services/ConnectionManager';
 
 export interface ConnectionInfo {
   id: string;
@@ -206,6 +207,14 @@ export class ConnectionFormPanel {
 
               await this.storeConnections(connections);
 
+              // Close any active connections for this ID to ensure pool is refreshed with new settings
+              try {
+                // Use the ID of the connection we just saved
+                await ConnectionManager.getInstance().closeAllConnectionsById(newConnection.id);
+              } catch (e) {
+                console.error('Failed to close stale connections:', e);
+              }
+
               vscode.window.showInformationMessage(`Connection ${this._connectionToEdit ? 'updated' : 'saved'} successfully!`);
               vscode.commands.executeCommand('postgres-explorer.refreshConnections');
               this._panel.dispose();
@@ -223,8 +232,19 @@ export class ConnectionFormPanel {
 
   public static show(extensionUri: vscode.Uri, extensionContext: vscode.ExtensionContext, connectionToEdit?: ConnectionInfo) {
     if (ConnectionFormPanel.currentPanel) {
-      ConnectionFormPanel.currentPanel._panel.reveal();
-      return;
+      // Check if we are switching contexts (Add <-> Edit) or Edit <-> Edit (different ID)
+      const current = ConnectionFormPanel.currentPanel;
+      const currentId = current._connectionToEdit?.id;
+      const newId = connectionToEdit?.id;
+
+      if (currentId !== newId) {
+        // Context switch detected - dispose old panel so we create a fresh one
+        current.dispose();
+      } else {
+        // Same context - just reveal
+        current._panel.reveal();
+        return;
+      }
     }
 
     const panel = vscode.window.createWebviewPanel(

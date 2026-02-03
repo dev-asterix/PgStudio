@@ -16,7 +16,7 @@ export class SqlExecutor {
     const execution = this._controller.createNotebookCellExecution(cell);
     const startTime = Date.now();
     execution.start(startTime);
-    execution.clearOutput();
+    await execution.clearOutput();
 
     try {
       const metadata = cell.notebook.metadata as PostgresMetadata;
@@ -118,7 +118,7 @@ export class SqlExecutor {
           // Clear notices for next statement
           notices.length = 0;
 
-          execution.appendOutput(new vscode.NotebookCellOutput([
+          await execution.appendOutput(new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.json(outputData, 'application/vnd.postgres-notebook.result')
           ]));
 
@@ -147,7 +147,7 @@ export class SqlExecutor {
             canExplain: true
           };
 
-          execution.appendOutput(new vscode.NotebookCellOutput([
+          await execution.appendOutput(new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.json(errorData, 'application/vnd.postgres-notebook.error')
           ]));
 
@@ -169,7 +169,7 @@ export class SqlExecutor {
 
     } catch (err: any) {
       console.error('SqlExecutor: Execution failed:', err);
-      execution.replaceOutput(new vscode.NotebookCellOutput([
+      await execution.replaceOutput(new vscode.NotebookCellOutput([
         vscode.NotebookCellOutputItem.error(err)
       ]));
       execution.end(false, Date.now());

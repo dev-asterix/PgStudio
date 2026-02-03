@@ -62,6 +62,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "postgres-explorer.editConnection",
+        "title": "Edit Connection",
+        "icon": "$(edit)"
+      },
+      {
         "command": "postgres-explorer.filterTree",
         "title": "Filter Tree",
         "icon": "$(filter)"
@@ -1113,6 +1118,11 @@
           "command": "postgres-explorer.reconnectConnection",
           "when": "view == postgresExplorer && viewItem == connection-disconnected",
           "group": "inline@1"
+        },
+        {
+          "command": "postgres-explorer.editConnection",
+          "when": "view == postgresExplorer && (viewItem == connection || viewItem == connection-disconnected)",
+          "group": "inline@2"
         },
         {
           "command": "postgres-explorer.createDatabase",

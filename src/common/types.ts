@@ -86,6 +86,7 @@ export interface TableRenderOptions {
   tableInfo?: TableInfo;
   initialSelectedIndices?: Set<number>;
   modifiedCells?: Map<string, { originalValue: any, newValue: any }>;
+  rowsMarkedForDeletion?: Set<number>;
 }
 
 export interface ChartRenderOptions {

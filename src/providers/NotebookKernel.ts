@@ -2,6 +2,7 @@
 import * as vscode from 'vscode';
 import { PostgresMetadata } from '../common/types';
 import { ConnectionManager } from '../services/ConnectionManager';
+import { ConnectionUtils } from '../utils/connectionUtils';
 import { CompletionProvider } from './kernel/CompletionProvider';
 import { SqlExecutor } from './kernel/SqlExecutor';
 
@@ -38,6 +39,7 @@ export class PostgresKernel implements vscode.Disposable {
 
     // Handle messages from renderer
     (this._controller as any).onDidReceiveMessage(async (event: any) => {
+      console.log('[NotebookKernel] onDidReceiveMessage triggered, event:', event);
       this.handleMessage(event);
     });
   }
@@ -50,29 +52,40 @@ export class PostgresKernel implements vscode.Disposable {
 
   private async handleMessage(event: any) {
     const { type } = event.message;
-    console.log(`NotebookKernel: Received message type: ${type}`);
+    console.log(`[NotebookKernel] handleMessage: Received message type: ${type}`);
+    console.log(`[NotebookKernel] handleMessage: Full event.message:`, event.message);
 
     if (type === 'cancel_query') {
+      console.log('[NotebookKernel] Handling cancel_query');
       await this._executor.cancelQuery(event.message);
     } else if (type === 'execute_update_background') {
+      console.log('[NotebookKernel] Handling execute_update_background');
       await this._executor.executeBackgroundUpdate(event.message, event.editor.notebook);
     } else if (type === 'script_delete') {
+      console.log('[NotebookKernel] Handling script_delete');
       await this.handleScriptDelete(event);
     } else if (type === 'execute_update') {
+      console.log('[NotebookKernel] Handling execute_update');
       await this.handleExecuteUpdate(event);
     } else if (type === 'export_request') {
+      console.log('[NotebookKernel] Handling export_request');
       await this.handleExportRequest(event);
-    } else if (type === 'delete_row') {
-      await this.handleDeleteRow(event);
+    } else if (type === 'delete_row' || type === 'delete_rows') {
+      console.log('[NotebookKernel] Handling delete_row/delete_rows');
+      await this.handleDeleteRows(event);
     } else if (type === 'sendToChat') {
+      console.log('[NotebookKernel] Handling sendToChat');
       const { data } = event.message;
       await vscode.commands.executeCommand('postgresExplorer.chatView.focus');
       await vscode.commands.executeCommand('postgres-explorer.sendToChat', data);
     } else if (type === 'saveChanges') {
-      console.log('NotebookKernel: Handling saveChanges');
+      console.log('[NotebookKernel] Handling saveChanges');
       await this.handleSaveChanges(event);
     } else if (type === 'showErrorMessage') {
+      console.log('[NotebookKernel] Handling showErrorMessage');
       vscode.window.showErrorMessage(event.message.message);
+    } else {
+      console.log(`[NotebookKernel] Unknown message type: ${type}`);
     }
   }
 
@@ -211,38 +224,85 @@ export class PostgresKernel implements vscode.Disposable {
     return `${header}\n${body}`;
   }
 
-  private async handleDeleteRow(event: any) {
-    // Re-using the simple execute logic
-    const { schema, table, primaryKeys, row } = event.message;
+  private async handleDeleteRows(event: any) {
+    console.log('[NotebookKernel] handleDeleteRows called, event.message:', event.message);
+    const { tableInfo, rows, row } = event.message; // Support both 'rows' (array) and legacy 'row' (single)
+    const targets = rows || (row ? [row] : []);
+    console.log('[NotebookKernel] targets:', targets);
+
+    if (targets.length === 0) return;
+
+    const { schema, table, primaryKeys } = tableInfo || event.message; // Support legacy payload structure if needed
+    console.log('[NotebookKernel] schema:', schema, 'table:', table, 'primaryKeys:', primaryKeys);
+
+    if (!primaryKeys || primaryKeys.length === 0) {
+      vscode.window.showErrorMessage('Cannot delete: No primary keys defined for this table.');
+      return;
+    }
+
     const notebook = event.editor.notebook;
     const metadata = notebook.metadata as PostgresMetadata;
     if (!metadata?.connectionId) return;
 
     try {
-      const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
-      const connection = connections.find(c => c.id === metadata.connectionId);
+      const connection = ConnectionUtils.findConnection(metadata.connectionId);
       if (!connection) throw new Error('Connection not found');
 
-      const client = await ConnectionManager.getInstance().getSessionClient({
-        id: connection.id,
-        host: connection.host,
-        port: connection.port,
-        username: connection.username,
-        database: metadata.databaseName || connection.database,
-        name: connection.name
-      }, notebook.uri.toString());
+      // Use ConnectionManager with correct database from metadata
+      const config = {
+        ...connection,
+        database: metadata.databaseName || connection.database
+      };
 
-      const conditions: string[] = [];
-      const values: any[] = [];
-      let i = 1;
-      for (const pk of primaryKeys) {
-        conditions.push(`"${pk}" = $${i++}`);
-        values.push(row[pk]);
+      const client = await ConnectionManager.getInstance().getSessionClient(config, notebook.uri.toString());
+
+      // Batch delete matching PKs
+      // DELETE FROM table WHERE (pk1, pk2) IN ((v1, v2), (v3, v4))
+      // Constructing a safe parameterized query
+
+      // Flatten all values for parameters
+      const allValues: any[] = [];
+      const rowConditions: string[] = [];
+
+      let paramIndex = 1;
+
+      for (const targetRow of targets) {
+        const conditions: string[] = [];
+        for (const pk of primaryKeys) {
+          conditions.push(`$${paramIndex++}`);
+          allValues.push(targetRow[pk]);
+        }
+        if (primaryKeys.length > 1) {
+          rowConditions.push(`(${conditions.join(', ')})`);
+        } else {
+          rowConditions.push(conditions[0]);
+        }
       }
-      await client.query(`DELETE FROM "${schema}"."${table}" WHERE ${conditions.join(' AND ')}`, values);
-      vscode.window.showInformationMessage('Row deleted.');
+
+      const pkCols = primaryKeys.map((pk: string) => `"${pk}"`).join(', ');
+      const whereClause = primaryKeys.length > 1
+        ? `(${pkCols}) IN (${rowConditions.join(', ')})`
+        : `${pkCols} IN (${rowConditions.join(', ')})`;
+
+      const query = `DELETE FROM "${schema}"."${table}" WHERE ${whereClause}`;
+      console.log('[NotebookKernel] Executing query:', query);
+      console.log('[NotebookKernel] Query params:', allValues);
+
+      const result = await client.query(query, allValues);
+
+      vscode.window.showInformationMessage(`Deleted ${result.rowCount} row(s) from ${schema}.${table}`);
+      console.log('[NotebookKernel] Delete successful, rowCount:', result.rowCount);
+
+      // Re-execute the cell to refresh the data
+      const cell = event.editor.document;
+      if (cell) {
+        console.log('[NotebookKernel] Re-executing cell to refresh data');
+        await vscode.commands.executeCommand('notebook.cell.execute', { ranges: [{ start: cell.index, end: cell.index + 1 }] });
+      }
+
     } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to delete row: ${err.message}`);
+      console.error('[NotebookKernel] Delete failed:', err);
+      vscode.window.showErrorMessage(`Failed to delete rows: ${err.message}`);
     }
   }
 

@@ -24,6 +24,7 @@ export class TableRenderer {
   private tableInfo?: TableInfo;
   private selectedIndices: Set<number> = new Set();
   private modifiedCells: Map<string, { originalValue: any, newValue: any }> = new Map();
+  private rowsMarkedForDeletion: Set<number> = new Set();
   private dateTimeDisplayMode: Map<string, boolean> = new Map();
 
   private renderedCount = 0;
@@ -59,8 +60,9 @@ export class TableRenderer {
     this.originalRows = options.originalRows;
     this.columnTypes = options.columnTypes || {};
     this.tableInfo = options.tableInfo;
-    this.selectedIndices = options.initialSelectedIndices || new Set();
+    this.selectedIndices = options.initialSelectedIndices ? new Set(options.initialSelectedIndices) : new Set();
     this.modifiedCells = options.modifiedCells || new Map();
+    this.rowsMarkedForDeletion = options.rowsMarkedForDeletion || new Set();
 
     // Reset state
     this.tableContainer.innerHTML = '';
@@ -270,6 +272,7 @@ export class TableRenderer {
     this.applyRowStyle(tr, index);
 
     tr.onclick = (e) => {
+      console.log('[TableRenderer] tr.onclick fired, index:', index, 'target:', e.target);
       if (e.ctrlKey || e.metaKey) {
         if (this.selectedIndices.has(index)) this.selectedIndices.delete(index);
         else this.selectedIndices.add(index);
@@ -277,6 +280,7 @@ export class TableRenderer {
         this.selectedIndices.clear();
         this.selectedIndices.add(index);
       }
+      console.log('[TableRenderer] selectedIndices after click:', Array.from(this.selectedIndices));
       this.updateRowSelectionStyles();
       this.events.onSelectionChange?.(this.selectedIndices);
     };
@@ -298,7 +302,23 @@ export class TableRenderer {
             left: 0;
             z-index: 5;
             background: var(--vscode-editor-background);
+            cursor: pointer;
         `;
+    selectTd.title = 'Click to select row';
+    selectTd.onclick = (e) => {
+      console.log('[TableRenderer] selectTd (row#) clicked, index:', index);
+      e.stopPropagation(); // Handle selection here specifically
+      if (e.ctrlKey || e.metaKey) {
+        if (this.selectedIndices.has(index)) this.selectedIndices.delete(index);
+        else this.selectedIndices.add(index);
+      } else {
+        this.selectedIndices.clear();
+        this.selectedIndices.add(index);
+      }
+      console.log('[TableRenderer] selectedIndices after selectTd click:', Array.from(this.selectedIndices));
+      this.updateRowSelectionStyles();
+      this.events.onSelectionChange?.(this.selectedIndices);
+    };
     tr.appendChild(selectTd);
 
     this.columns.forEach(col => {
@@ -353,12 +373,22 @@ export class TableRenderer {
   }
 
   private applyRowStyle(tr: HTMLElement, index: number) {
-    if (this.selectedIndices.has(index)) {
+    // Check if row is marked for deletion
+    if (this.rowsMarkedForDeletion.has(index)) {
+      tr.style.background = 'rgba(255, 0, 0, 0.1)';
+      tr.style.color = 'var(--vscode-errorForeground)';
+      tr.style.textDecoration = 'line-through';
+      tr.style.opacity = '0.6';
+    } else if (this.selectedIndices.has(index)) {
       tr.style.background = 'var(--vscode-list-activeSelectionBackground)';
       tr.style.color = 'var(--vscode-list-activeSelectionForeground)';
+      tr.style.textDecoration = 'none';
+      tr.style.opacity = '1';
     } else {
       tr.style.background = index % 2 === 0 ? 'transparent' : 'var(--vscode-keybindingTable-rowsBackground)';
       tr.style.color = 'var(--vscode-editor-foreground)';
+      tr.style.textDecoration = 'none';
+      tr.style.opacity = '1';
     }
   }
 
@@ -371,7 +401,7 @@ export class TableRenderer {
   }
 
   private handleCellEdit(e: MouseEvent, td: HTMLElement, index: number, col: string, type: string) {
-    e.stopPropagation();
+    // e.stopPropagation(); // Allow click to bubble to row for selection
     if (this.currentlyEditingCell === td) return;
 
     if (this.currentlyEditingCell) {

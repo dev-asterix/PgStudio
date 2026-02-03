@@ -36,8 +36,19 @@ export function registerAllCommands(
   const commands = [
     {
       command: 'postgres-explorer.addConnection',
-      callback: (connection?: any) => {
-        ConnectionFormPanel.show(context.extensionUri, context, connection);
+      callback: () => {
+        // Explicitly pass undefined to force "Add" mode, ignoring any arguments VS Code might pass
+        ConnectionFormPanel.show(context.extensionUri, context, undefined);
+      }
+    },
+    {
+      command: 'postgres-explorer.editConnection',
+      callback: (item: DatabaseTreeItem) => {
+        if (!item || !item.connectionId) return;
+        const connection = ConnectionUtils.findConnection(item.connectionId);
+        if (connection) {
+          ConnectionFormPanel.show(context.extensionUri, context, connection);
+        }
       }
     },
     {
