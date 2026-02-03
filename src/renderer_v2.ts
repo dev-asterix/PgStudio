@@ -12,8 +12,9 @@ import { getNumericColumns, isDateColumn } from './renderer/utils/formatting';
 // Register Chart.js components
 Chart.register(...registerables);
 
-// Track chart instances per element for cleanup
+// Track renderer instances and their containers per output element for cleanup
 const chartInstances = new WeakMap<HTMLElement, ChartRenderer>();
+const tableInstances = new WeakMap<HTMLElement, TableRenderer>();
 
 export const activate: ActivationFunction = context => {
   return {
@@ -261,6 +262,19 @@ export const activate: ActivationFunction = context => {
       rightActions.appendChild(analyzeBtn);
       rightActions.appendChild(optimizeBtn);
 
+      if (json.explainPlan) {
+        const explainPlanBtn = createButton('🧭 View Plan', true);
+        explainPlanBtn.title = 'Open EXPLAIN ANALYZE plan view';
+        explainPlanBtn.onclick = () => {
+          context.postMessage?.({
+            type: 'showExplainPlan',
+            plan: json.explainPlan,
+            query: query || ''
+          });
+        };
+        rightActions.appendChild(explainPlanBtn);
+      }
+
       actionsBar.appendChild(leftActions);
       actionsBar.appendChild(rightActions);
       if (!json.error) {
@@ -434,10 +448,16 @@ export const activate: ActivationFunction = context => {
           updateActionsVisibility();
         }
       });
+      
+      // Store for cleanup on disposal
+      tableInstances.set(element, tableRenderer);
 
       // CHART RENDERER
       const chartCanvas = document.createElement('canvas');
       const chartRenderer = new ChartRenderer(chartCanvas);
+      
+      // Store for cleanup on disposal
+      chartInstances.set(element, chartRenderer);
 
       const exportChartBtn = createButton('📷 Export Chart', true);
       exportChartBtn.style.display = 'none'; // Hidden by default
@@ -627,9 +647,6 @@ export const activate: ActivationFunction = context => {
       }
 
       element.appendChild(mainContainer);
-    },
-    disposeOutputItem(id) {
-      // Cleanup logic could go here
     }
   };
 };

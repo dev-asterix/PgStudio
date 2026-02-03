@@ -31,6 +31,13 @@ export interface PostgresMetadata {
   port: number;
   username?: string;
   password?: string;
+  // Transaction settings
+  transactionSettings?: {
+    autoRollback: boolean;
+    isolationLevel?: 'READ UNCOMMITTED' | 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE';
+    readOnly?: boolean;
+    deferrable?: boolean;
+  };
   custom?: {
     cells: any[];
     metadata: {
@@ -75,6 +82,8 @@ export interface QueryResults {
   columnTypes?: Record<string, string>;
   success?: boolean;
   backendPid?: number | null;
+  explainPlan?: any;
+  slowQuery?: boolean;
   breadcrumb?: BreadcrumbContext;
 }
 

@@ -6,8 +6,10 @@ export interface QueryHistoryItem {
   timestamp: number;
   success: boolean;
   duration?: number;
+  durationMs?: number;
   rowCount?: number;
   connectionName?: string;
+  slow?: boolean;
 }
 
 export class QueryHistoryService {
@@ -70,6 +72,23 @@ export class QueryHistoryService {
     const newHistory = history.filter(item => item.id !== id);
     await this.storage.update(this.STORAGE_KEY, newHistory);
     this._onDidChangeHistory.fire();
+  }
+
+  /**
+   * Trend stats for recent query history
+   */
+  public getTrendStats(): { avgMs: number; successRate: number; slowRate: number; total: number } {
+    const history = this.getHistory();
+    if (history.length === 0) {
+      return { avgMs: 0, successRate: 0, slowRate: 0, total: 0 };
+    }
+
+    const total = history.length;
+    const avgMs = history.reduce((sum, h) => sum + (h.durationMs ?? (h.duration ? h.duration * 1000 : 0)), 0) / total;
+    const successRate = history.filter(h => h.success).length / total;
+    const slowRate = history.filter(h => h.slow).length / total;
+
+    return { avgMs, successRate, slowRate, total };
   }
 
   private generateId(): string {

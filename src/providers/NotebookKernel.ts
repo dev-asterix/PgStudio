@@ -5,6 +5,7 @@ import { ConnectionManager } from '../services/ConnectionManager';
 import { ConnectionUtils } from '../utils/connectionUtils';
 import { CompletionProvider } from './kernel/CompletionProvider';
 import { SqlExecutor } from './kernel/SqlExecutor';
+import { getTransactionManager, IsolationLevel } from '../services/TransactionManager';
 
 export class PostgresKernel implements vscode.Disposable {
   readonly id = 'postgres-kernel';
@@ -55,7 +56,26 @@ export class PostgresKernel implements vscode.Disposable {
     console.log(`[NotebookKernel] handleMessage: Received message type: ${type}`);
     console.log(`[NotebookKernel] handleMessage: Full event.message:`, event.message);
 
-    if (type === 'cancel_query') {
+    // Transaction management commands
+    if (type === 'transaction_begin') {
+      console.log('[NotebookKernel] Handling transaction_begin');
+      await this.handleTransactionBegin(event);
+    } else if (type === 'transaction_commit') {
+      console.log('[NotebookKernel] Handling transaction_commit');
+      await this.handleTransactionCommit(event);
+    } else if (type === 'transaction_rollback') {
+      console.log('[NotebookKernel] Handling transaction_rollback');
+      await this.handleTransactionRollback(event);
+    } else if (type === 'savepoint_create') {
+      console.log('[NotebookKernel] Handling savepoint_create');
+      await this.handleSavepointCreate(event);
+    } else if (type === 'savepoint_release') {
+      console.log('[NotebookKernel] Handling savepoint_release');
+      await this.handleSavepointRelease(event);
+    } else if (type === 'savepoint_rollback') {
+      console.log('[NotebookKernel] Handling savepoint_rollback');
+      await this.handleSavepointRollback(event);
+    } else if (type === 'cancel_query') {
       console.log('[NotebookKernel] Handling cancel_query');
       await this._executor.cancelQuery(event.message);
     } else if (type === 'execute_update_background') {
@@ -306,7 +326,116 @@ export class PostgresKernel implements vscode.Disposable {
     }
   }
 
+  private async getSessionClient(notebook: vscode.NotebookDocument): Promise<any> {
+    const metadata = notebook.metadata as PostgresMetadata;
+    if (!metadata?.connectionId) throw new Error('No connection found');
+
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+    const connection = connections.find(c => c.id === metadata.connectionId);
+    if (!connection) throw new Error('Connection not found');
+
+    return await ConnectionManager.getInstance().getSessionClient({
+      id: connection.id,
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      database: metadata.databaseName || connection.database,
+      name: connection.name
+    }, notebook.uri.toString());
+  }
+
+  private async handleTransactionBegin(event: any) {
+    try {
+      const notebook = event.editor.notebook;
+      const client = await this.getSessionClient(notebook);
+      const sessionId = notebook.uri.toString();
+      const txManager = getTransactionManager();
+      const { isolationLevel = 'READ COMMITTED', readOnly = false, deferrable = false } = event.message;
+
+      await txManager.beginTransaction(client, sessionId, isolationLevel as IsolationLevel, readOnly, deferrable);
+      
+      const summary = txManager.getTransactionSummary(sessionId);
+      vscode.window.showInformationMessage(summary);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to begin transaction: ${err.message}`);
+    }
+  }
+
+  private async handleTransactionCommit(event: any) {
+    try {
+      const notebook = event.editor.notebook;
+      const client = await this.getSessionClient(notebook);
+      const sessionId = notebook.uri.toString();
+      const txManager = getTransactionManager();
+
+      await txManager.commitTransaction(client, sessionId);
+      vscode.window.showInformationMessage('✅ Transaction committed');
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to commit transaction: ${err.message}`);
+    }
+  }
+
+  private async handleTransactionRollback(event: any) {
+    try {
+      const notebook = event.editor.notebook;
+      const client = await this.getSessionClient(notebook);
+      const sessionId = notebook.uri.toString();
+      const txManager = getTransactionManager();
+
+      await txManager.rollbackTransaction(client, sessionId);
+      vscode.window.showInformationMessage('⏮️ Transaction rolled back');
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to rollback transaction: ${err.message}`);
+    }
+  }
+
+  private async handleSavepointCreate(event: any) {
+    try {
+      const notebook = event.editor.notebook;
+      const client = await this.getSessionClient(notebook);
+      const sessionId = notebook.uri.toString();
+      const txManager = getTransactionManager();
+
+      const savepointName = await txManager.createSavepoint(client, sessionId);
+      vscode.window.showInformationMessage(`📍 Savepoint created: ${savepointName}`);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to create savepoint: ${err.message}`);
+    }
+  }
+
+  private async handleSavepointRelease(event: any) {
+    try {
+      const notebook = event.editor.notebook;
+      const client = await this.getSessionClient(notebook);
+      const sessionId = notebook.uri.toString();
+      const txManager = getTransactionManager();
+      const { savepointName } = event.message;
+
+      await txManager.releaseSavepoint(client, sessionId, savepointName);
+      vscode.window.showInformationMessage(`✓ Savepoint released: ${savepointName || 'latest'}`);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to release savepoint: ${err.message}`);
+    }
+  }
+
+  private async handleSavepointRollback(event: any) {
+    try {
+      const notebook = event.editor.notebook;
+      const client = await this.getSessionClient(notebook);
+      const sessionId = notebook.uri.toString();
+      const txManager = getTransactionManager();
+      const { savepointName } = event.message;
+
+      await txManager.rollbackToSavepoint(client, sessionId, savepointName);
+      vscode.window.showInformationMessage(`⏮️ Rolled back to savepoint: ${savepointName || 'latest'}`);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to rollback savepoint: ${err.message}`);
+    }
+  }
+
   dispose() {
+    const txManager = getTransactionManager();
+    // Cleanup will happen on extension deactivation
     this._controller.dispose();
   }
 }

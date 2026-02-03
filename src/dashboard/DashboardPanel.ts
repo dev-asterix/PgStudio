@@ -203,6 +203,23 @@ export class DashboardPanel {
           data = fRes.rows;
           columns = ['Name', 'Language'];
           break;
+        case 'pgStatStatements':
+          const pgRes = await client.query(`
+                        SELECT query, calls, total_time, mean_time, rows
+                        FROM pg_stat_statements
+                        WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+                        ORDER BY total_time DESC
+                        LIMIT 50
+                    `);
+          data = pgRes.rows.map((r: any) => ({
+            query: r.query,
+            calls: r.calls,
+            total_time: Number(r.total_time).toFixed(1),
+            mean_time: Number(r.mean_time).toFixed(1),
+            rows: r.rows
+          }));
+          columns = ['Query', 'Calls', 'Total Time (ms)', 'Mean Time (ms)', 'Rows'];
+          break;
         // Add other cases as needed
       }
 

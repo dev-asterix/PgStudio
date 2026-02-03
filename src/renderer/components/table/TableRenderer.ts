@@ -585,4 +585,19 @@ export class TableRenderer {
       modifiedCells: this.modifiedCells
     });
   }
+
+  public dispose() {
+    // Cleanup IntersectionObserver
+    if (this.loadMoreObserver) {
+      this.loadMoreObserver.disconnect();
+      this.loadMoreObserver = null;
+    }
+    
+    // Clear sentinel reference
+    this.loadMoreSentinel = null;
+    
+    // Clear DOM references
+    this.tableBody = null;
+    this.currentlyEditingCell = null;
+  }
 }

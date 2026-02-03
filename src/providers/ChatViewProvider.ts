@@ -417,12 +417,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async _handleSearchDbObjects(query: string): Promise<void> {
     try {
-      // First fetch if cache is empty
-      if (this._dbObjectService.getCache().length === 0) {
-        await this._dbObjectService.fetchDbObjects();
-      }
-
-      const filtered = this._dbObjectService.searchObjects(query);
+      const filtered = await this._dbObjectService.searchObjectsAsync(query);
 
       this._view?.webview.postMessage({
         type: 'dbObjectsResult',
@@ -453,10 +448,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async _handleGetAllDbObjects(): Promise<void> {
     try {
-      const objects = await this._dbObjectService.fetchDbObjects();
+      const objects = await this._dbObjectService.getInitialObjects();
       this._view?.webview.postMessage({
         type: 'dbObjectsResult',
-        objects: objects.slice(0, 50)
+        objects: objects
       });
     } catch (error) {
       this._view?.webview.postMessage({

@@ -541,7 +541,13 @@ function hideDetails() {
 }
 
 function renderDetailsView(type, data, columns) {
-  const title = type.charAt(0).toUpperCase() + type.slice(1);
+  const titleMap = {
+    tables: 'Tables',
+    views: 'Views',
+    functions: 'Functions',
+    pgStatStatements: 'Top SQL (pg_stat_statements)'
+  };
+  const title = titleMap[type] || (type.charAt(0).toUpperCase() + type.slice(1));
   document.getElementById('detail-title').innerText = title;
 
   let html = '<div class="table-container"><table><thead><tr>';
@@ -553,10 +559,18 @@ function renderDetailsView(type, data, columns) {
   } else {
     data.forEach(row => {
       html += '<tr>';
-      html += '<td class="mono">' + row.name + '</td>';
-      if (type === 'tables') html += '<td>' + row.size + '</td>';
-      if (type === 'views') html += '<td>' + (row.owner || '') + '</td>';
-      if (type === 'functions') html += '<td>' + row.language + '</td>';
+      if (type === 'pgStatStatements') {
+        html += '<td class="mono" style="max-width: 640px; white-space: pre-wrap;">' + row.query + '</td>';
+        html += '<td>' + row.calls + '</td>';
+        html += '<td>' + row.total_time + '</td>';
+        html += '<td>' + row.mean_time + '</td>';
+        html += '<td>' + row.rows + '</td>';
+      } else {
+        html += '<td class="mono">' + row.name + '</td>';
+        if (type === 'tables') html += '<td>' + row.size + '</td>';
+        if (type === 'views') html += '<td>' + (row.owner || '') + '</td>';
+        if (type === 'functions') html += '<td>' + row.language + '</td>';
+      }
       html += '</tr>';
     });
   }

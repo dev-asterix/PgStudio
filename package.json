@@ -868,6 +868,7 @@
           "contextualTitle": "PostgreSQL Explorer",
           "icon": "resources/ai-icon.png"
         },
+
         {
           "id": "postgresExplorer.history",
           "name": "Query History",
@@ -1015,6 +1016,11 @@
           "type": "number",
           "default": 0,
           "description": "Global query timeout in milliseconds (0 for no timeout). Can be overridden per connection."
+        },
+        "postgresExplorer.performance.slowQueryThresholdMs": {
+          "type": "number",
+          "default": 2000,
+          "description": "Threshold in milliseconds to flag slow queries in history and results."
         }
       }
     },

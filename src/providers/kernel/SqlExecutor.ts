@@ -7,6 +7,7 @@ import { SqlParser } from './SqlParser';
 import { SecretStorageService } from '../../services/SecretStorageService';
 import { ErrorService } from '../../services/ErrorService';
 import { QueryHistoryService } from '../../services/QueryHistoryService';
+import { getTransactionManager } from '../../services/TransactionManager';
 
 export class SqlExecutor {
   constructor(private readonly _controller: vscode.NotebookController) { }
@@ -85,6 +86,22 @@ export class SqlExecutor {
           const executionTime = (stmtEndTime - stmtStartTime) / 1000;
 
           const success = true;
+          const slowThresholdMs = vscode.workspace.getConfiguration().get<number>('postgresExplorer.performance.slowQueryThresholdMs', 2000);
+          const durationMs = executionTime * 1000;
+          const isSlow = durationMs >= slowThresholdMs;
+
+          // Extract EXPLAIN (FORMAT JSON) plan if available
+          let explainPlan: any | undefined;
+          if (result.command === 'EXPLAIN' && result.rows?.length) {
+            const planCell = result.rows[0]['QUERY PLAN'] ?? result.rows[0]['query_plan'];
+            if (planCell) {
+              try {
+                explainPlan = typeof planCell === 'string' ? JSON.parse(planCell) : planCell;
+              } catch {
+                explainPlan = planCell;
+              }
+            }
+          }
 
           // Build output data
           const tableInfo = await this.getTableInfo(client, result, query);
@@ -104,6 +121,8 @@ export class SqlExecutor {
             executionTime,
             backendPid,
             tableInfo,
+            explainPlan,
+            slowQuery: isSlow,
             breadcrumb: {
               connectionId: connection.id,
               connectionName: connection.name || connection.host,
@@ -127,6 +146,8 @@ export class SqlExecutor {
             query: query,
             success: true,
             duration: executionTime,
+            durationMs,
+            slow: isSlow,
             rowCount: result.rowCount || 0,
             connectionName: connection.name
           });
@@ -137,13 +158,25 @@ export class SqlExecutor {
 
           console.error('SqlExecutor: Query error:', err);
 
-          // Attempt to get error explanation from AI (placeholder logic implies client-side AI or just error display)
+          // Handle transaction auto-rollback on error
+          const sessionId = cell.notebook.uri.toString();
+          const txManager = getTransactionManager();
+          try {
+            await txManager.handleCellError(client, sessionId, err);
+          } catch (txErr) {
+            console.error('SqlExecutor: Transaction error handling failed:', txErr);
+          }
+
+          const slowThresholdMs = vscode.workspace.getConfiguration().get<number>('postgresExplorer.performance.slowQueryThresholdMs', 2000);
+          const durationMs = executionTime * 1000;
+          const isSlow = durationMs >= slowThresholdMs;
 
           const errorData = {
             success: false,
             error: err.message,
             query: query,
             executionTime,
+            slowQuery: isSlow,
             canExplain: true
           };
 
@@ -156,6 +189,8 @@ export class SqlExecutor {
             query: query,
             success: false,
             duration: executionTime,
+            durationMs,
+            slow: isSlow,
             connectionName: connection.name
           });
 

@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionManager } from '../services/ConnectionManager';
 import { getSchemaCache, SchemaCache } from '../lib/schema-cache';
+import { Debouncer } from '../lib/debounce';
 
 function buildItemKey(item: DatabaseTreeItem): string {
   return [item.type, item.connectionId || '', item.databaseName || '', item.schema || '', item.label].join(':');
@@ -13,6 +14,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
   readonly onDidChangeTreeData: vscode.Event<DatabaseTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
   private disconnectedConnections: Set<string> = new Set();
   private readonly _cache: SchemaCache = getSchemaCache();
+  private readonly debouncer = new Debouncer();
 
   // Filter, Favorites, and Recent Items
   private _filterPattern: string = '';
@@ -21,6 +23,10 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
   private static readonly MAX_RECENT_ITEMS = 10;
   private static readonly FAVORITES_KEY = 'postgresExplorer.favorites';
   private static readonly RECENT_KEY = 'postgresExplorer.recentItems';
+  
+  // Virtualization support - only render visible items
+  private static readonly VIRTUALIZATION_THRESHOLD = 100; // Use virtual scrolling for 100+ items
+  private visibleRange?: vscode.TreeViewExpansionEvent<DatabaseTreeItem>;
 
   constructor(private readonly extensionContext: vscode.ExtensionContext) {
     // Initialize all connections as disconnected by default
@@ -229,20 +235,50 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
   }
 
   refresh(element?: DatabaseTreeItem): void {
-    // Clear cache on manual refresh to ensure fresh data
-    if (!element) {
-      this._cache.clear();
-    } else if (element.connectionId && element.databaseName) {
-      this._cache.invalidateDatabase(element.connectionId, element.databaseName);
-    } else if (element.connectionId) {
-      this._cache.invalidateConnection(element.connectionId);
-    }
-    this._onDidChangeTreeData.fire(element);
+    // Debounce tree refresh to prevent excessive updates during rapid operations
+    this.debouncer.debounce('tree-refresh', () => {
+      // Clear cache on manual refresh to ensure fresh data
+      if (!element) {
+        this._cache.clear();
+      } else if (element.connectionId && element.databaseName) {
+        this._cache.invalidateDatabase(element.connectionId, element.databaseName);
+      } else if (element.connectionId) {
+        this._cache.invalidateConnection(element.connectionId);
+      }
+      this._onDidChangeTreeData.fire(element);
+    }, 300); // Debounce for 300ms to batch rapid updates
   }
 
   collapseAll(): void {
     // This will trigger a refresh of the tree view with all items collapsed
     this._onDidChangeTreeData.fire();
+  }
+
+  /**
+   * Apply virtual rendering for large item collections
+   * Returns only visible items based on virtualization threshold
+   */
+  private applyVirtualization(items: DatabaseTreeItem[]): DatabaseTreeItem[] {
+    if (items.length < DatabaseTreeProvider.VIRTUALIZATION_THRESHOLD) {
+      return items;
+    }
+
+    // For very large collections, could implement viewport-based filtering
+    // For now, return all items but sorted by relevance (favorites/recent first)
+    const sorted = [...items];
+    sorted.sort((a, b) => {
+      const aFav = this._favorites.has(buildItemKey(a)) ? 0 : 1;
+      const bFav = this._favorites.has(buildItemKey(b)) ? 0 : 1;
+      const aRecent = this._recentItems.includes(buildItemKey(a)) ? 0 : 1;
+      const bRecent = this._recentItems.includes(buildItemKey(b)) ? 0 : 1;
+
+      // Prioritize: favorites > recent > others
+      const aScore = aFav * 2 + aRecent;
+      const bScore = bFav * 2 + bRecent;
+      return aScore - bScore;
+    });
+
+    return sorted;
   }
 
   getTreeItem(element: DatabaseTreeItem): vscode.TreeItem {

@@ -46,6 +46,13 @@ export interface DashboardStats {
     deadlocks: number;
     conflicts: number;
   };
+  pgStatStatements?: {
+    query: string;
+    calls: number;
+    total_time: number;
+    mean_time: number;
+    rows: number;
+  }[];
   waitEvents: { type: string; count: number }[];
   longRunningQueries: number;
 }
@@ -54,7 +61,7 @@ import { Client, PoolClient } from 'pg';
 
 export async function fetchStats(client: Client | PoolClient, dbName: string): Promise<DashboardStats> {
   // Fetch data with error handling for each query to prevent one failure from breaking the entire dashboard
-  const [dbInfoRes, connRes, tableRes, extRes, countsRes, activeQueriesRes, locksRes, metricsRes, settingsRes, waitsRes, longQueriesRes] = await Promise.allSettled([
+  const [dbInfoRes, connRes, tableRes, extRes, countsRes, activeQueriesRes, locksRes, metricsRes, settingsRes, pgStatRes, waitsRes, longQueriesRes] = await Promise.allSettled([
     // DB Info
     client.query(`
             SELECT pg_catalog.pg_get_userbyid(d.datdba) as owner,
@@ -149,6 +156,15 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
     // Settings (Max Connections)
     client.query(`SHOW max_connections`),
 
+    // pg_stat_statements (Top Queries)
+    client.query(`
+            SELECT query, calls, total_time, mean_time, rows
+            FROM pg_stat_statements
+            WHERE dbid = (SELECT oid FROM pg_database WHERE datname = $1)
+            ORDER BY total_time DESC
+            LIMIT 10
+    `, [dbName]),
+
     // Wait Events Information
     client.query(`
             SELECT wait_event_type, count(*) as count
@@ -189,6 +205,7 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
   const locksRows = getResult(locksRes).rows;
   const metricsRow = getResult(metricsRes).rows[0] || { xact_commit: 0, xact_rollback: 0, blks_read: 0, blks_hit: 0, deadlocks: 0, conflicts: 0 };
   const maxConnRow = getResult(settingsRes).rows[0] || { max_connections: '100' };
+  const pgStatRows = getResult(pgStatRes).rows || [];
   const waitEventsRows = getResult(waitsRes).rows;
   const longQueriesRow = getResult(longQueriesRes).rows[0] || { count: 0 };
 
@@ -258,6 +275,13 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
       deadlocks: parseInt(metricsRow.deadlocks || '0'),
       conflicts: parseInt(metricsRow.conflicts || '0')
     },
+    pgStatStatements: pgStatRows.map((r: any) => ({
+      query: r.query,
+      calls: parseInt(r.calls || '0'),
+      total_time: parseFloat(r.total_time || '0'),
+      mean_time: parseFloat(r.mean_time || '0'),
+      rows: parseInt(r.rows || '0')
+    })),
     waitEvents: waitEventsRows.map((r: any) => ({
       type: r.wait_event_type,
       count: parseInt(r.count)

@@ -12,6 +12,7 @@ import { WhatsNewManager } from './activation/WhatsNewManager';
 import { ChatViewProvider } from './providers/ChatViewProvider';
 import { QueryHistoryService } from './services/QueryHistoryService';
 import { ConnectionUtils } from './utils/connectionUtils';
+import { ExplainProvider } from './providers/ExplainProvider';
 
 export let outputChannel: vscode.OutputChannel;
 
@@ -100,6 +101,11 @@ export async function activate(context: vscode.ExtensionContext) {
         await vscode.commands.executeCommand('postgresExplorer.chatView.focus');
         await chatView.sendToChat(message.data);
       }
+      return;
+    }
+
+    if (message.type === 'showExplainPlan') {
+      ExplainProvider.show(context.extensionUri, message.plan, message.query);
       return;
     }
 
@@ -348,6 +354,17 @@ export async function activate(context: vscode.ExtensionContext) {
   await migrateExistingPasswords(context);
 }
 
-export function deactivate() {
-  outputChannel?.appendLine('Deactivating PgStudio extension');
+export async function deactivate() {
+  outputChannel?.appendLine('Deactivating PgStudio extension - closing all connections');
+  
+  try {
+    // Close all database connections (pools and sessions)
+    await ConnectionManager.getInstance().closeAll();
+    outputChannel?.appendLine('All database connections closed successfully');
+  } catch (err) {
+    outputChannel?.appendLine(`Error closing connections during deactivation: ${err}`);
+    console.error('Error during extension deactivation:', err);
+  }
+  
+  outputChannel?.appendLine('PgStudio extension deactivated');
 }
