@@ -39,6 +39,7 @@
 - 🛡️ **Connection Safety** — Environment tagging (🔴 PROD, 🟡 STAGING, 🟢 DEV), read-only mode, query safety analyzer
 - 📊 **Live Dashboard** — Real-time metrics & query monitoring
 - 📓 **SQL Notebooks** — Interactive notebooks with AI assistance
+- 💾 **Saved Queries** — Tag-based organization, connection context restoration, AI metadata generation, edit & reuse
 - 🌳 **Database Explorer** — Browse tables, views, functions, types, FDWs
 - 🛠️ **Object Operations** — CRUD, scripts, VACUUM, ANALYZE, REINDEX
 - 📊 **Table Intelligence** — Profile, activity monitor, index usage, definition viewer
@@ -155,6 +156,27 @@ yape/
 ├── tsconfig.json             # TypeScript config
 └── webpack.config.js         # Webpack config
 ```
+
+---
+
+## 💾 Saved Queries Library
+
+Organize, manage, and reuse your most important queries with intelligent tagging and context preservation.
+
+### Features
+- **🏷️ Tag-Based Organization** — Group queries by topic (e.g., "analytics", "maintenance", "daily-reports")
+- **🔗 Connection Context** — Queries remember their original connection, database, and schema
+- **📓 Quick Reopening** — Click "Open in Notebook" to restore the query with full context in a new notebook
+- **✏️ Edit Anytime** — Modify title, description, tags, and SQL without creating duplicates
+- **🤖 AI Metadata** — Auto-generate titles, descriptions, and tags using AI
+- **📊 Rich Metadata Display** — Hover to see creation date, last used, database, and schema
+
+### Usage
+1. **Save Query**: Click "Save Query" CodeLens button on any SQL cell in a notebook
+2. **Add Metadata**: Enter title, description, and tags (AI can help auto-generate)
+3. **Organize**: Use tags to group related queries
+4. **Reuse**: Click a saved query → "Open in Notebook" to restore with original context
+5. **Edit**: Right-click any saved query → "Edit Query" to modify it
 
 ---
 

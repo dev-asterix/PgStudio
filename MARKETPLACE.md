@@ -36,6 +36,7 @@
 | 🛡️ **Connection Safety** | Environment tagging (🔴 PROD, 🟡 STAGING, 🟢 DEV), read-only mode, query safety analyzer |
 | 📊 **Live Dashboard** | Real-time metrics, active query monitoring, and performance graphs |
 | 📓 **SQL Notebooks** | Interactive notebooks with rich output, AI assistance, and export options |
+| 💾 **Saved Queries** | Tag-based organization, AI metadata generation, connection context restoration, edit & reuse |
 | 🌳 **Database Explorer** | Browse tables, views, functions, types, extensions, roles, and FDWs |
 | 🛠️ **Object Operations** | Full CRUD operations, scripts, VACUUM, ANALYZE, REINDEX |
 | 📊 **Table Intelligence** | Profile, activity monitor, index usage analytics, definition viewer |
@@ -125,6 +126,20 @@ Navigate your database with an intuitive hierarchical tree view:
         ├── 🧩 Extensions
         └── 👥 Roles
 ```
+
+---
+
+## 💾 Saved Queries Library
+
+Organize, manage, and reuse your most important queries with intelligent tagging and context preservation.
+
+### Core Capabilities
+- **🏷️ Tag-Based Organization** — Group queries by purpose for instant discovery
+- **🔗 Connection Context** — Queries remember their original connection, database, and schema
+- **📓 One-Click Reopening** — Restore queries with full context in a new notebook
+- **✏️ In-Place Editing** — Modify queries without creating duplicates
+- **🤖 AI Metadata Generation** — Auto-generate titles, descriptions, and tags
+- **📊 Rich Metadata Display** — See creation date, usage count, database, and connection at a glance
 
 ---
 
