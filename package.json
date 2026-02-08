@@ -1,7 +1,7 @@
 {
   "name": "postgres-explorer",
   "displayName": "PgStudio (PostgreSQL Explorer)",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "PostgreSQL database explorer for VS Code with notebook support",
   "publisher": "ric-v",
   "private": false,
@@ -998,7 +998,11 @@
               },
               "environment": {
                 "type": "string",
-                "enum": ["production", "staging", "development"],
+                "enum": [
+                  "production",
+                  "staging",
+                  "development"
+                ],
                 "description": "Environment tag for safety warnings and visual indicators"
               },
               "readOnlyMode": {
