@@ -227,15 +227,75 @@ npm run compile
 
 ## 🧪 Testing
 
-```bash
-# Run all tests
-npm run test
+### Quick Start
 
-# Run with coverage
+```bash
+# Install dependencies
+npm ci
+
+# Run all tests
+npm run test:all
+
+# Run tests with coverage
 npm run coverage
+
+# Run specific test types
+npm run test:unit           # Unit tests
+npm run test:integration    # Integration tests with Docker
+npm run test:renderer       # Renderer component tests
 ```
 
-Tests are located in `src/test/unit/` using Mocha + Chai + Sinon.
+### Docker-Based Integration Tests
+
+```bash
+# Start PostgreSQL containers (12-17)
+make docker-up
+
+# Run integration tests
+npm run test:integration
+
+# Stop containers
+make docker-down
+```
+
+### Using Make
+
+```bash
+make test-unit           # Unit tests
+make test-integration    # Integration tests
+make test-renderer       # Renderer component tests
+make test-all            # All tests
+make coverage            # Coverage report
+make test-full           # Full suite with Docker
+```
+
+### Using Test Scripts
+
+**Linux/macOS:**
+```bash
+./scripts/test.sh --unit
+./scripts/test.sh --integration --pg 16
+./scripts/test.sh --coverage
+```
+
+**Windows:**
+```batch
+scripts\test.bat --unit
+scripts\test.bat --integration --pg 16
+scripts\test.bat --coverage
+```
+
+### Testing Infrastructure
+
+PgStudio includes comprehensive testing infrastructure:
+
+- **Unit Tests** (50%+ coverage): Mocha + Chai + Sinon
+- **Integration Tests**: Connection lifecycle, SSL, pool exhaustion, version compatibility
+- **Component Tests**: Renderer with jsdom, tree views, forms, dashboards
+- **Docker Containers**: PostgreSQL 12, 14, 15, 16, 17 for compatibility testing
+- **CI/CD Pipeline**: GitHub Actions with Matrix testing (Node 18-22, PostgreSQL 12-17)
+
+📖 **Full documentation**: See [TESTING.md](TESTING.md) and [TESTING_QUICKSTART.md](TESTING_QUICKSTART.md)
 
 ---
 
@@ -244,6 +304,7 @@ Tests are located in `src/test/unit/` using Mocha + Chai + Sinon.
 - 🐛 [Report Bugs](https://github.com/dev-asterix/yape/issues/new?template=bug_report.md)
 - 💡 [Request Features](https://github.com/dev-asterix/yape/issues/new?template=feature_request.md)
 - 🔧 Fork → Branch → PR
+- 🧪 Ensure all tests pass: `npm run test:all && npm run coverage`
 
 ### Commit Convention
 

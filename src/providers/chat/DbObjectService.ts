@@ -16,6 +16,208 @@ export class DbObjectService {
   private readonly MAX_RESULTS = 100;
   private readonly INITIAL_RESULTS = 40;
 
+  async getConnections(): Promise<DbObject[]> {
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+    return connections.map(conn => {
+       const connName = conn.name || conn.host;
+       return {
+          name: connName,
+          type: 'connection',
+          schema: '',
+          database: '',
+          connectionId: conn.id,
+          connectionName: connName,
+          breadcrumb: connName,
+          isContainer: true
+       };
+    });
+  }
+
+  async getDatabases(connectionId: string): Promise<DbObject[]> {
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+    const conn = connections.find(c => c.id === connectionId);
+    if (!conn) return [];
+
+    let client: PoolClient | undefined;
+    try {
+        const connName = conn.name || conn.host;
+        client = await ConnectionManager.getInstance().getPooledClient({
+          id: conn.id,
+          host: conn.host,
+          port: conn.port,
+          username: conn.username,
+          database: 'postgres',
+          name: conn.name
+        });
+        
+        if (!client) return [];
+
+        const dbListKey = SchemaCache.buildKey(conn.id, 'postgres', undefined, 'db-list');
+        const dbResult = await this._dbListCache.getOrFetch(dbListKey, async () => {
+          return await client!.query(
+            "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"
+          );
+        }, 300000);
+
+        return dbResult.rows.map(row => ({
+            name: row.datname,
+            type: 'database',
+            schema: '',
+            database: row.datname,
+            connectionId: conn.id,
+            connectionName: connName,
+            breadcrumb: `${connName} > ${row.datname}`,
+            isContainer: true
+        }));
+    } catch (e) {
+        console.error('Error fetching databases:', e);
+        return [];
+    }
+  }
+
+  async getSchemas(connectionId: string, database: string): Promise<DbObject[]> {
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+    const conn = connections.find(c => c.id === connectionId);
+    if (!conn) return [];
+
+    let client: PoolClient | undefined;
+    try {
+        const connName = conn.name || conn.host;
+        client = await ConnectionManager.getInstance().getPooledClient({
+            id: conn.id,
+            host: conn.host,
+            port: conn.port,
+            username: conn.username,
+            database: database,
+            name: conn.name
+        });
+
+        if (!client) return [];
+
+        const schemaKey = SchemaCache.buildKey(conn.id, database, undefined, 'schema-list');
+        const schemaResult = await this._dbListCache.getOrFetch(schemaKey, async () => {
+             return await client!.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname != 'information_schema' ORDER BY nspname"
+            );
+        }, 300000);
+
+         return schemaResult.rows.map(row => ({
+            name: row.nspname,
+            type: 'schema',
+            schema: row.nspname,
+            database: database,
+            connectionId: conn.id,
+            connectionName: connName,
+            breadcrumb: `${connName} > ${database} > ${row.nspname}`,
+            isContainer: true
+        }));
+    } catch (e) {
+        console.error('Error fetching schemas:', e);
+        return [];
+    }
+  }
+
+  async getSchemaObjects(connectionId: string, database: string, schema: string): Promise<DbObject[]> {
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+    const conn = connections.find(c => c.id === connectionId);
+    if (!conn) return [];
+    
+    const objects: DbObject[] = [];
+    let client: PoolClient | undefined;
+
+     try {
+        const connName = conn.name || conn.host;
+        client = await ConnectionManager.getInstance().getPooledClient({
+            id: conn.id,
+            host: conn.host,
+            port: conn.port,
+            username: conn.username,
+            database: database,
+            name: conn.name
+        });
+
+        if (!client) return [];
+
+         // Get tables
+         const tableResult = await client.query(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE'",
+            [schema]
+          );
+          for (const row of tableResult.rows) {
+            objects.push({
+              name: row.table_name,
+              type: 'table',
+              schema: schema,
+              database: database,
+              connectionId: conn.id,
+              connectionName: connName,
+              breadcrumb: `${connName} > ${database} > ${schema} > ${row.table_name}`,
+              isContainer: false
+            });
+          }
+
+          // Get views
+          const viewResult = await client.query(
+            "SELECT table_name FROM information_schema.views WHERE table_schema = $1",
+            [schema]
+          );
+           for (const row of viewResult.rows) {
+            objects.push({
+              name: row.table_name,
+              type: 'view',
+              schema: schema,
+              database: database,
+              connectionId: conn.id,
+              connectionName: connName,
+              breadcrumb: `${connName} > ${database} > ${schema} > ${row.table_name}`,
+              isContainer: false
+            });
+          }
+
+          // Get functions
+          const funcResult = await client.query(
+            "SELECT routine_name FROM information_schema.routines WHERE routine_schema = $1 AND routine_type = 'FUNCTION'",
+            [schema]
+          );
+           for (const row of funcResult.rows) {
+            objects.push({
+              name: row.routine_name,
+              type: 'function',
+              schema: schema,
+              database: database,
+              connectionId: conn.id,
+              connectionName: connName,
+              breadcrumb: `${connName} > ${database} > ${schema} > ${row.routine_name}`,
+              isContainer: false
+            });
+          }
+
+          // Get materialized views
+          const matViewResult = await client.query(
+            "SELECT matviewname FROM pg_matviews WHERE schemaname = $1",
+            [schema]
+          );
+          for (const row of matViewResult.rows) {
+            objects.push({
+                name: row.matviewname,
+                type: 'materialized-view',
+                schema: schema,
+                database: database,
+                connectionId: conn.id,
+                connectionName: connName,
+                breadcrumb: `${connName} > ${database} > ${schema} > ${row.matviewname}`,
+                isContainer: false
+            });
+          }
+
+          return objects;
+
+     } catch(e) {
+         console.error('Error fetching schema objects:', e);
+         return [];
+     }
+  }
+
   async fetchDbObjects(): Promise<DbObject[]> {
     const objects: DbObject[] = [];
     const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];

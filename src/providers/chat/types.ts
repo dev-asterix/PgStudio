@@ -26,7 +26,7 @@ export interface DbMention {
   schemaInfo?: string;
 }
 
-export type DbObjectType = 'table' | 'view' | 'function' | 'materialized-view' | 'type' | 'schema';
+export type DbObjectType = 'table' | 'view' | 'function' | 'materialized-view' | 'type' | 'schema' | 'database' | 'connection';
 
 export interface DbObject {
   name: string;
@@ -37,6 +37,7 @@ export interface DbObject {
   connectionName: string;
   breadcrumb: string;
   details?: string;
+  isContainer?: boolean;
 }
 
 export interface ChatSession {

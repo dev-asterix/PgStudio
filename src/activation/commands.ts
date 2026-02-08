@@ -794,6 +794,38 @@ export function registerAllCommands(
       }
     },
 
+    {
+      command: 'postgres-explorer.attachToChat',
+      callback: async (item: DatabaseTreeItem) => {
+        if (!chatViewProviderInstance) {
+          vscode.window.showWarningMessage('SQL Assistant is not available');
+          return;
+        }
+        if (!item || !item.connectionId || !item.databaseName) {
+          vscode.window.showErrorMessage('Invalid database object');
+          return;
+        }
+
+        // Resolve connection name from config
+        const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+        const conn = connections.find(c => c.id === item.connectionId);
+        const connectionName = conn?.name || conn?.host || 'Unknown';
+
+        // Convert DatabaseTreeItem to DbObject
+        const dbObject: any = {
+          name: item.label,
+          type: item.type,
+          schema: item.schema || '',
+          database: item.databaseName,
+          connectionId: item.connectionId,
+          connectionName: connectionName,
+          breadcrumb: [connectionName, item.databaseName, item.schema, item.label].filter(Boolean).join(' > ')
+        };
+
+        await chatViewProviderInstance.attachDbObject(dbObject);
+      }
+    },
+
     // Column commands
     {
       command: 'postgres-explorer.showColumnProperties',

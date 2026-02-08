@@ -53,6 +53,41 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Attach a database object to the chat
+   * Called from the @ inline button on tree items
+   */
+  public async attachDbObject(obj: DbObject): Promise<void> {
+    // Focus the chat view
+    if (this._view) {
+      this._view.show(true);
+    }
+
+    // Wait a bit for the view to be ready
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    if (!this._view) {
+      vscode.window.showWarningMessage('Chat view not available');
+      return;
+    }
+
+    try {
+      // Fetch schema details
+      const details = await this._dbObjectService.getObjectSchema(obj);
+      const objWithDetails = { ...obj, details };
+
+      // Send to webview
+      this._view.webview.postMessage({
+        type: 'addMentionFromTree',
+        object: objWithDetails
+      });
+
+    } catch (error) {
+      console.error('[ChatViewProvider] Failed to attach object:', error);
+      ErrorService.getInstance().showError('Failed to attach object to chat');
+    }
+  }
+
+  /**
    * Send a query and results to the chat as attachments
    * Called from the "Chat" CodeLens button or "Send to Chat" result button
    * Does NOT auto-send - waits for user to add their context
@@ -238,6 +273,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case 'getDbObjects':
           await this._handleGetAllDbObjects();
           break;
+        case 'getDbHierarchy':
+            await this._handleGetDbHierarchy(data.path);
+            break;
         case 'openAiSettings':
           vscode.commands.executeCommand('postgres-explorer.aiSettings');
           break;
@@ -460,6 +498,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         error: 'No database connections available'
       });
     }
+  }
+
+  private async _handleGetDbHierarchy(path: any): Promise<void> {
+     try {
+        let items: DbObject[] = [];
+
+        if (!path || !path.connectionId) {
+          items = await this._dbObjectService.getConnections();
+        } else if (!path.database) {
+          items = await this._dbObjectService.getDatabases(path.connectionId);
+        } else if (!path.schema) {
+          items = await this._dbObjectService.getSchemas(path.connectionId, path.database);
+        } else {
+          items = await this._dbObjectService.getSchemaObjects(path.connectionId, path.database, path.schema);
+        }
+        
+        this._view?.webview.postMessage({
+          type: 'dbHierarchyData',
+          path: path,
+          items: items
+        });
+
+     } catch (error) {
+         console.error('Error fetching hierarchy:', error);
+         this._view?.webview.postMessage({
+            type: 'dbHierarchyData',
+            path: path,
+            items: [],
+            error: 'Failed to load database objects'
+         });
+     }
   }
 
   // ==================== File Handling ====================

@@ -622,6 +622,11 @@
         "icon": "$(sparkle)"
       },
       {
+        "command": "postgres-explorer.attachToChat",
+        "title": "Attach to SQL Assistant",
+        "icon": "$(mention)"
+      },
+      {
         "command": "postgres-explorer.showColumnProperties",
         "title": "Show Column Properties",
         "icon": "$(info)"
@@ -1089,6 +1094,11 @@
           "command": "postgres-explorer.deleteHistoryItem",
           "when": "view == postgresExplorer.history",
           "group": "2_destructive"
+        },
+        {
+          "command": "postgres-explorer.attachToChat",
+          "when": "view == postgresExplorer && viewItem =~ /^(table|view|function|materialized-view|type|foreign-table|schema)$/",
+          "group": "inline@0"
         },
         {
           "command": "postgres-explorer.showTableProperties",
@@ -1778,8 +1788,15 @@
     "watch": "tsc -watch -p ./",
     "esbuild": "npm run esbuild-base -- --sourcemap && npm run esbuild-renderer -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch & npm run esbuild-renderer -- --sourcemap --watch",
-    "test": "ts-mocha -r src/test/setup.ts 'src/test/unit/**/*.test.ts'",
-    "coverage": "nyc npm run test"
+    "test": "npm run compile && ts-mocha -p src/test/tsconfig.json -r src/test/setup.ts 'src/test/unit/**/*.test.ts'",
+    "test:unit": "npm run compile && ts-mocha -p src/test/tsconfig.json -r src/test/setup.ts 'src/test/unit/**/*.test.ts'",
+    "test:integration": "npm run compile && ts-mocha -p src/test/tsconfig.json -r src/test/setup.ts 'src/test/integration/**/*.test.ts'",
+    "test:renderer": "npm run compile && ts-mocha -p src/test/tsconfig.json -r src/test/setup.ts 'src/test/unit/RendererComponents.test.ts'",
+    "test:renderer:coverage": "npm run compile && nyc ts-mocha -p src/test/tsconfig.json -r src/test/setup.ts 'src/test/unit/RendererComponents.test.ts'",
+    "test:versions": "npm run compile && ts-mocha -p src/test/tsconfig.json -r src/test/setup.ts 'src/test/integration/ConnectionLifecycle.test.ts'",
+    "test:all": "npm run compile && ts-mocha -p src/test/tsconfig.json -r src/test/setup.ts 'src/test/**/*.test.ts'",
+    "coverage": "npm run compile && nyc npm run test:all",
+    "coverage:report": "nyc report --reporter=html --reporter=text"
   },
   "dependencies": {
     "@types/pg-cursor": "^2.7.2",
@@ -1791,6 +1808,7 @@
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
+    "@types/jsdom": "^21.1.7",
     "@types/mocha": "^10.0.10",
     "@types/module-alias": "^2.0.4",
     "@types/node": "^16.18.126",
@@ -1801,6 +1819,7 @@
     "@types/vscode-notebook-renderer": "^1.72.4",
     "chai": "^6.2.1",
     "esbuild": ">=0.25.0",
+    "jsdom": "^24.0.0",
     "mocha": "^11.7.5",
     "module-alias": "^2.2.3",
     "nyc": "^17.1.0",
