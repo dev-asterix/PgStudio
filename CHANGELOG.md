@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.2] - 2026-02-08
+
+### Added
+- **Advanced Saved Queries System**: Complete redesign with tag-based organization, connection context preservation, AI metadata generation, and rich metadata display.
+- **Context Menu Actions**: Copy Query, Edit Query (modify title/description/tags/SQL), Open in Notebook (with context restoration), and Delete.
+- **Professional Query Form**: Syntax-highlighted SQL preview, form validation, error handling, and AI-assisted metadata generation.
+- **Tree View Organization**: Queries grouped by collapsible tag groups; untagged queries displayed separately.
+
+### Improved
+- **Notebook Integration**: Saved queries now open directly in `.pgsql` notebooks with full connection metadata (connectionId, databaseName, schemaName) automatically restored.
+- **Query Discovery**: Rich tooltips with creation/last-used dates, database name, connection name, and usage count on tree items.
+
+---
+
 ## [0.8.1] - 2026-02-08
 
 ### Added

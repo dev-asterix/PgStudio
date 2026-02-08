@@ -9,25 +9,39 @@ import { ErrorService } from '../../services/ErrorService';
 import { QueryHistoryService } from '../../services/QueryHistoryService';
 import { getTransactionManager } from '../../services/TransactionManager';
 import { QueryAnalyzer } from '../../services/QueryAnalyzer';
+import { extensionContext } from '../../extension';
 
 export class SqlExecutor {
   constructor(private readonly _controller: vscode.NotebookController) { }
 
   /**
    * Apply auto-LIMIT to SELECT queries that don't already have one
+   * Respects both global settings and profile-level autoLimitSelectResults
    */
-  private applyAutoLimit(query: string, connection: any): string {
-    // Check if auto-limit is enabled
-    const autoLimitEnabled = vscode.workspace.getConfiguration()
-      .get<boolean>('postgresExplorer.query.autoLimitEnabled', true);
+  private applyAutoLimit(query: string, connection: any, notebookMetadata?: any, profileContext?: any): string {
+    // Check profile-level auto-limit first (takes precedence)
+    let limit: number | null = null;
     
-    if (!autoLimitEnabled && !connection.readOnlyMode) {
-      return query;
+    // Try profile context first, then metadata
+    if (profileContext?.autoLimitSelectResults !== undefined && profileContext.autoLimitSelectResults > 0) {
+      limit = profileContext.autoLimitSelectResults;
+    } else if (notebookMetadata?.autoLimitSelectResults !== undefined && notebookMetadata.autoLimitSelectResults > 0) {
+      limit = notebookMetadata.autoLimitSelectResults;
+    } else {
+      // Fall back to global settings
+      const autoLimitEnabled = vscode.workspace.getConfiguration()
+        .get<boolean>('postgresExplorer.query.autoLimitEnabled', true);
+      
+      if (autoLimitEnabled || connection.readOnlyMode) {
+        limit = vscode.workspace.getConfiguration()
+          .get<number>('postgresExplorer.performance.defaultLimit', 1000);
+      }
     }
 
-    // Get default limit
-    const defaultLimit = vscode.workspace.getConfiguration()
-      .get<number>('postgresExplorer.performance.defaultLimit', 1000);
+    // If no limit determined, return query as-is
+    if (!limit) {
+      return query;
+    }
 
     // Only apply to SELECT queries
     const trimmed = query.trim();
@@ -45,7 +59,7 @@ export class SqlExecutor {
     const baseQuery = hasSemicolon ? trimmed.slice(0, -1) : trimmed;
 
     // Apply LIMIT
-    const limitedQuery = `${baseQuery} LIMIT ${defaultLimit}${hasSemicolon ? ';' : ''}`;
+    const limitedQuery = `${baseQuery} LIMIT ${limit}${hasSemicolon ? ';' : ''}`;
     return limitedQuery;
   }
 
@@ -62,11 +76,28 @@ export class SqlExecutor {
         throw new Error('No connection metadata found');
       }
 
+      // Fetch active profile context from globalState
+      // This allows different notebooks to have different active profiles
+      const notebookKey = `activeProfile-${cell.notebook.uri.toString()}`;
+      const activeProfileContext = extensionContext?.globalState.get<any>(notebookKey);
+
       // Get connection info
       const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
       const connection = connections.find(c => c.id === metadata.connectionId);
       if (!connection) {
         throw new Error('Connection not found');
+      }
+
+      // Apply profile settings from metadata to connection (metadata takes precedence)
+      if (metadata.readOnlyMode !== undefined) {
+        connection.readOnlyMode = metadata.readOnlyMode;
+      }
+      
+      // Apply profile settings from globalState if available
+      if (activeProfileContext) {
+        if (activeProfileContext.readOnlyMode !== undefined) {
+          connection.readOnlyMode = activeProfileContext.readOnlyMode;
+        }
       }
 
       const client = await ConnectionManager.getInstance().getSessionClient({
@@ -145,9 +176,9 @@ export class SqlExecutor {
         let query = statements[stmtIndex];
         const stmtStartTime = Date.now();
 
-        // Apply auto-LIMIT if applicable
+        // Apply auto-LIMIT if applicable (pass notebook metadata and profile context for settings)
         const originalQuery = query;
-        query = this.applyAutoLimit(query, connection);
+        query = this.applyAutoLimit(query, connection, metadata, activeProfileContext);
         const autoLimitApplied = query !== originalQuery;
 
         console.log(`SqlExecutor: Executing statement ${stmtIndex + 1}/${statements.length}:`, query.substring(0, 100));

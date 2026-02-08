@@ -1,6 +1,48 @@
 import { ConnectionConfig } from '../common/types';
 
 /**
+ * Execution plan performance metrics extracted from EXPLAIN JSON
+ */
+export interface PlanMetrics {
+  totalCost: number;
+  planningTime: number;
+  executionTime: number;
+  sequentialScans: number;
+  indexScans: number;
+  bufferStats?: {
+    bufferHits: number;
+    bufferReads: number;
+    hitRatio?: number;
+  };
+  bottlenecks: string[];
+  recommendations: string[];
+}
+
+/**
+ * Baseline statistics for a query (for trend comparison)
+ */
+export interface QueryBaseline {
+  queryHash: string;
+  avgExecutionTime: number;
+  minExecutionTime: number;
+  maxExecutionTime: number;
+  stdDev: number;
+  sampleCount: number;
+  lastUpdated: number;
+}
+
+/**
+ * Query performance analysis result
+ */
+export interface PerformanceAnalysis {
+  metrics: PlanMetrics | null;
+  baseline: QueryBaseline | null;
+  isDegraded: boolean;
+  degradationPercent?: number;
+  analysis: string;
+}
+
+/**
  * Represents a dangerous SQL operation detected by the analyzer
  */
 export interface DangerousOperation {
@@ -330,5 +372,177 @@ export class QueryAnalyzer {
     );
 
     return !hasWriteOperation;
+  }
+
+  /**
+   * Extract performance metrics from EXPLAIN JSON plan.
+   * Analyzes the execution plan to identify bottlenecks and opportunities.
+   */
+  public extractPlanMetrics(explainPlan: any): PlanMetrics | null {
+    if (!explainPlan || typeof explainPlan !== 'object') {
+      return null;
+    }
+
+    // Handle both direct plan object and wrapped format
+    const plan =
+      explainPlan[0] || explainPlan;
+
+    if (!plan || !plan['Plan']) {
+      return null;
+    }
+
+    const planMetrics: PlanMetrics = {
+      totalCost: plan['Plan']['Total Cost'] || 0,
+      planningTime: plan['Planning Time'] || 0,
+      executionTime: plan['Execution Time'] || 0,
+      sequentialScans: 0,
+      indexScans: 0,
+      bottlenecks: [],
+      recommendations: [],
+    };
+
+    // Count scan types and identify bottlenecks
+    this.analyzePlanNode(plan['Plan'], planMetrics);
+
+    // Extract buffer statistics if present
+    if (plan['Planning'] !== undefined && plan['Buffers']) {
+      const buffers = plan['Buffers'];
+      const totalHits = (buffers['Shared Hit Blocks'] || 0) + (buffers['Shared Read Blocks'] || 0);
+      const reads = buffers['Shared Read Blocks'] || 0;
+      planMetrics.bufferStats = {
+        bufferHits: buffers['Shared Hit Blocks'] || 0,
+        bufferReads: reads,
+        hitRatio: totalHits > 0 ? ((totalHits - reads) / totalHits * 100) : 0,
+      };
+    }
+
+    // Generate recommendations based on metrics
+    this.generateRecommendations(planMetrics);
+
+    return planMetrics;
+  }
+
+  /**
+   * Recursively analyze plan nodes to count operations and identify bottlenecks
+   */
+  private analyzePlanNode(node: any, metrics: PlanMetrics): void {
+    if (!node) {
+      return;
+    }
+
+    const nodeType = node['Node Type'] || '';
+    const actualRows = node['Actual Rows'] || 0;
+    const planRows = node['Plan Rows'] || 0;
+    const actualTime = node['Actual Total Time'] || 0;
+
+    // Count scan types
+    if (nodeType.includes('Seq Scan')) {
+      metrics.sequentialScans++;
+    } else if (nodeType.includes('Index Scan')) {
+      metrics.indexScans++;
+    }
+
+    // Identify planning vs. execution mismatches (bottleneck)
+    if (planRows > 0 && actualRows > 0) {
+      const variance = Math.abs(actualRows - planRows) / planRows;
+      if (variance > 0.5) {
+        metrics.bottlenecks.push(
+          `Row estimation mismatch in ${nodeType}: planned ${planRows}, actual ${actualRows}`
+        );
+      }
+    }
+
+    // Flag slow operations
+    if (actualTime > 1000) {
+      metrics.bottlenecks.push(`${nodeType} took ${actualTime.toFixed(2)}ms`);
+    }
+
+    // Recursively process child nodes
+    if (node['Plans'] && Array.isArray(node['Plans'])) {
+      node['Plans'].forEach((child: any) => this.analyzePlanNode(child, metrics));
+    }
+  }
+
+  /**
+   * Generate optimization recommendations based on plan metrics
+   */
+  private generateRecommendations(metrics: PlanMetrics): void {
+    // Sequential scan optimization
+    if (metrics.sequentialScans > 0 && metrics.indexScans === 0) {
+      metrics.recommendations.push('Consider adding indexes on frequently filtered columns');
+    }
+
+    // High planning cost
+    if (metrics.totalCost > 10000) {
+      metrics.recommendations.push('Query planning cost is high; consider simplifying the query or analyzing table statistics');
+    }
+
+    // Buffer efficiency
+    if (metrics.bufferStats && metrics.bufferStats.hitRatio !== undefined) {
+      if (metrics.bufferStats.hitRatio < 80) {
+        metrics.recommendations.push('Low buffer hit ratio; consider increasing work_mem or improving indexes');
+      }
+    }
+
+    // Bottleneck-based recommendations
+    if (metrics.bottlenecks.length > 0) {
+      metrics.recommendations.push('Review bottlenecks: ' + metrics.bottlenecks[0]);
+    }
+  }
+
+  /**
+   * Compute a hash of normalized query for baseline tracking
+   */
+  public getQueryHash(query: string): string {
+    const normalized = this.normalizeQuery(query)
+      .toLowerCase()
+      .replace(/\?/g, ':param') // Normalize parameterized queries
+      .replace(/\d+/g, 'N'); // Normalize numeric literals
+    
+    // Simple hash function
+    let hash = 0;
+    for (let i = 0; i < normalized.length; i++) {
+      const char = normalized.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(16);
+  }
+
+  /**
+   * Analyze query performance against historical baseline
+   */
+  public analyzePerformanceAgainstBaseline(
+    executionTime: number,
+    baseline: QueryBaseline | null,
+    explainPlan: any
+  ): PerformanceAnalysis {
+    const metrics = this.extractPlanMetrics(explainPlan);
+
+    if (!baseline) {
+      return {
+        metrics,
+        baseline: null,
+        isDegraded: false,
+        analysis: 'No baseline available for comparison. First execution will be recorded as baseline.',
+      };
+    }
+
+    const isDegraded = executionTime > baseline.avgExecutionTime * 1.2; // 20% slower
+    const degradationPercent = isDegraded
+      ? Math.round(((executionTime - baseline.avgExecutionTime) / baseline.avgExecutionTime) * 100)
+      : 0;
+
+    const analysis = isDegraded
+      ? `Performance degradation detected: ${degradationPercent}% slower than baseline (${baseline.avgExecutionTime.toFixed(0)}ms avg vs ${executionTime.toFixed(0)}ms now).`
+      : `Query performance is within baseline (${baseline.avgExecutionTime.toFixed(0)}ms avg, ${executionTime.toFixed(0)}ms now).`;
+
+    return {
+      metrics,
+      baseline,
+      isDegraded,
+      degradationPercent,
+      analysis,
+    };
   }
 }

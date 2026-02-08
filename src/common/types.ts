@@ -34,6 +34,11 @@ export interface PostgresMetadata {
   port: number;
   username?: string;
   password?: string;
+  // Profile settings
+  activeProfileId?: string;
+  readOnlyMode?: boolean;
+  autoLimitSelectResults?: number;
+  autoApplySafetyCheck?: boolean;
   // Transaction settings
   transactionSettings?: {
     autoRollback: boolean;

@@ -750,6 +750,101 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await this._handleUserMessage(prompt);
   }
 
+  /**
+   * Handle "Explain this result" - feeds execution plan and performance metrics to AI
+   */
+  public async handleExplainResult(
+    query: string,
+    executionTime: number,
+    rowCount: number,
+    explainPlan?: any
+  ): Promise<void> {
+    const QueryAnalyzer = require('../services/QueryAnalyzer').QueryAnalyzer;
+    const analyzer = QueryAnalyzer.getInstance();
+
+    let planContext = '';
+    let metricsContext = '';
+
+    if (explainPlan) {
+      const metrics = analyzer.extractPlanMetrics(explainPlan);
+      if (metrics) {
+        metricsContext = `
+Performance Metrics:
+- Total Cost: ${metrics.totalCost.toFixed(2)}
+- Planning Time: ${metrics.planningTime.toFixed(2)}ms
+- Execution Time: ${metrics.executionTime.toFixed(2)}ms
+- Sequential Scans: ${metrics.sequentialScans}
+- Index Scans: ${metrics.indexScans}
+${metrics.bufferStats ? `- Buffer Hit Ratio: ${metrics.bufferStats.hitRatio?.toFixed(1)}%` : ''}
+${metrics.bottlenecks.length > 0 ? `\nBottlenecks Detected:\n${metrics.bottlenecks.map((b: string) => `- ${b}`).join('\n')}` : ''}
+${metrics.recommendations.length > 0 ? `\nInitial Recommendations:\n${metrics.recommendations.map((r: string) => `- ${r}`).join('\n')}` : ''}`;
+
+        planContext = `\n\nExecution Plan (JSON):\n\`\`\`json\n${JSON.stringify(explainPlan, null, 2)}\n\`\`\``;
+      }
+    }
+
+    const prompt = `I just executed this query and got these results:\n\`\`\`sql\n${query}\n\`\`\`
+
+Execution Details:
+- Time: ${executionTime.toFixed(3)}ms
+- Rows Returned: ${rowCount}
+${metricsContext}${planContext}
+
+Can you explain what this query is doing, how efficient it is, and what the execution plan tells us about its performance? What are the key performance factors?`;
+
+    await this._handleUserMessage(prompt);
+  }
+
+  /**
+   * Handle "Why slow?" - compares against baseline and provides performance analysis
+   */
+  public async handleWhySlow(
+    query: string,
+    currentExecutionTime: number,
+    baselineAvgTime: number,
+    explainPlan?: any,
+    tableStats?: Array<{ table: string; rows: number; deadRows: number; lastVacuum?: string }>
+  ): Promise<void> {
+    const QueryAnalyzer = require('../services/QueryAnalyzer').QueryAnalyzer;
+    const analyzer = QueryAnalyzer.getInstance();
+
+    let context = `Query:\n\`\`\`sql\n${query}\n\`\`\`
+
+Performance Comparison:
+- Current Execution Time: ${currentExecutionTime.toFixed(3)}ms
+- Historical Average: ${baselineAvgTime.toFixed(3)}ms
+- Degradation: ${(((currentExecutionTime - baselineAvgTime) / baselineAvgTime) * 100).toFixed(1)}% slower`;
+
+    if (explainPlan) {
+      const metrics = analyzer.extractPlanMetrics(explainPlan);
+      if (metrics) {
+        context += `
+
+Current Execution Plan Metrics:
+- Total Cost: ${metrics.totalCost.toFixed(2)}
+- Sequential Scans: ${metrics.sequentialScans}
+- Index Scans: ${metrics.indexScans}
+${metrics.bufferStats ? `- Buffer Hit Ratio: ${metrics.bufferStats.hitRatio?.toFixed(1)}%` : ''}
+${metrics.bottlenecks.length > 0 ? `\nBottlenecks:\n${metrics.bottlenecks.map((b: string) => `- ${b}`).join('\n')}` : ''}`;
+      }
+    }
+
+    if (tableStats && tableStats.length > 0) {
+      context += `
+
+Affected Table Statistics:
+${tableStats.map((t: any) => `- ${t.table}: ${t.rows} rows, ${t.deadRows} dead rows${t.lastVacuum ? `, last vacuum ${t.lastVacuum}` : ''}`).join('\n')}
+
+This might indicate table bloat or stale statistics affecting query planning.`;
+    }
+
+    const prompt = `${context}
+
+Why is this query running slower than its historical baseline? What could have changed (table growth, missing statistics, index bloat, lock contention, etc.)? Please provide specific next steps to diagnose and fix the performance regression.`;
+
+    await this._handleUserMessage(prompt);
+  }
+
   public async handleGenerateQuery(
     description: string,
     schemaContext?: Array<{ type: string, schema: string, name: string, columns?: string[] }>
