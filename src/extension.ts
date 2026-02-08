@@ -30,8 +30,11 @@ export async function activate(context: vscode.ExtensionContext) {
   ConnectionManager.getInstance();
   QueryHistoryService.initialize(context.workspaceState);
 
-  const { databaseTreeProvider, chatViewProviderInstance: chatView } = registerProviders(context, outputChannel);
+  const { databaseTreeProvider, treeView, chatViewProviderInstance: chatView } = registerProviders(context, outputChannel);
   chatViewProvider = chatView;
+
+  // Store tree view instance for reveal functionality
+  (databaseTreeProvider as any).setTreeView(treeView);
 
   registerAllCommands(context, databaseTreeProvider, chatView, outputChannel);
 

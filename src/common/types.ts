@@ -15,6 +15,9 @@ export interface ConnectionConfig {
   connectTimeout?: number;    // seconds (default: 5)
   applicationName?: string;   // Shows in pg_stat_activity
   options?: string;           // Raw options string (e.g., "-c search_path=myschema")
+  // Safety & confidence features
+  environment?: 'production' | 'staging' | 'development';  // Environment tag for safety warnings
+  readOnlyMode?: boolean;     // Force read-only transactions
   ssh?: {
     enabled: boolean;
     host: string;

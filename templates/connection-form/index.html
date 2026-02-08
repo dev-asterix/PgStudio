@@ -78,7 +78,38 @@
         </div>
 
         <div class="section-header">
-          <div class="section-icon">🔐</div>
+          <div class="section-icon">�️</div>
+          <div class="section-title">Safety & Security</div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="environment">
+              Environment
+              <span class="label-hint">Tag for safety warnings</span>
+            </label>
+            <select id="environment" name="environment">
+              <option value="">None</option>
+              <option value="development">Development</option>
+              <option value="staging">Staging</option>
+              <option value="production">Production</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-label" style="margin-top: 32px;">
+              <input type="checkbox" id="readOnlyMode" name="readOnlyMode">
+              <span>Read-Only Mode
+                <span class="label-hint" style="display: block; margin-left: 24px; margin-top: 4px;">
+                  Force all transactions to be read-only
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <div class="section-icon">�🔐</div>
           <div class="section-title">Authentication</div>
         </div>
 

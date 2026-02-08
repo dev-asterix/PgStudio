@@ -7,7 +7,7 @@ import { ChatViewProvider } from '../providers/ChatViewProvider';
 import { cmdAiAssist } from '../commands/aiAssist';
 import { showColumnProperties, copyColumnName, copyColumnNameQuoted, generateSelectStatement, generateWhereClause, generateAlterColumnScript, generateDropColumnScript, generateRenameColumnScript, addColumnComment, generateIndexOnColumn, viewColumnStatistics, cmdAddColumn } from '../commands/columns';
 import { showConstraintProperties, copyConstraintName, generateDropConstraintScript, generateAlterConstraintScript, validateConstraint, generateAddConstraintScript, viewConstraintDependencies, cmdConstraintOperations, cmdAddConstraint } from '../commands/constraints';
-import { cmdConnectDatabase, cmdDisconnectConnection, cmdDisconnectDatabase, cmdReconnectConnection } from '../commands/connection';
+import { cmdConnectDatabase, cmdDisconnectConnection, cmdDisconnectDatabase, cmdReconnectConnection, showConnectionSafety, revealInExplorer } from '../commands/connection';
 import { showIndexProperties, copyIndexName, generateDropIndexScript, generateReindexScript, generateScriptCreate, analyzeIndexUsage, generateAlterIndexScript, addIndexComment, cmdIndexOperations, cmdAddIndex } from '../commands/indexes';
 import { cmdAddObjectInDatabase, cmdBackupDatabase, cmdCreateDatabase, cmdDatabaseDashboard, cmdDatabaseOperations, cmdDeleteDatabase, cmdDisconnectDatabase as cmdDisconnectDatabaseLegacy, cmdGenerateCreateScript, cmdMaintenanceDatabase, cmdPsqlTool, cmdQueryTool, cmdRestoreDatabase, cmdScriptAlterDatabase, cmdShowConfiguration } from '../commands/database';
 import { cmdDropExtension, cmdEnableExtension, cmdExtensionOperations, cmdRefreshExtension } from '../commands/extensions';
@@ -980,6 +980,14 @@ export function registerAllCommands(
           vscode.window.showInformationMessage(`Switched to: ${selected.name || selected.host}`);
         }
       }
+    },
+    {
+      command: 'postgres-explorer.showConnectionSafety',
+      callback: showConnectionSafety
+    },
+    {
+      command: 'postgres-explorer.revealInExplorer',
+      callback: () => revealInExplorer(databaseTreeProvider)
     },
     {
       command: 'postgres-explorer.navigateBreadcrumb',

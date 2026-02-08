@@ -121,7 +121,18 @@ export class ConnectionManager {
     }
 
     try {
-      return await pool.connect();
+      const client = await pool.connect();
+      
+      // Apply read-only mode if configured
+      if (config.readOnlyMode) {
+        try {
+          await client.query('SET default_transaction_read_only = ON');
+        } catch (err) {
+          console.warn('Failed to set read-only mode:', err);
+        }
+      }
+      
+      return client;
     } catch (err: any) {
       // Handle SSL Fallback
       if (this.shouldFallback(config, err)) {
@@ -140,7 +151,18 @@ export class ConnectionManager {
         pool = this.createPool(clientConfig, key);
         this.pools.set(key, pool);
 
-        return await pool.connect();
+        const client = await pool.connect();
+        
+        // Apply read-only mode if configured
+        if (config.readOnlyMode) {
+          try {
+            await client.query('SET default_transaction_read_only = ON');
+          } catch (err) {
+            console.warn('Failed to set read-only mode:', err);
+          }
+        }
+        
+        return client;
       }
       throw err;
     }
@@ -171,6 +193,15 @@ export class ConnectionManager {
 
     try {
       await client.connect();
+      
+      // Apply read-only mode if configured
+      if (config.readOnlyMode) {
+        try {
+          await client.query('SET default_transaction_read_only = ON');
+        } catch (err) {
+          console.warn('Failed to set read-only mode:', err);
+        }
+      }
     } catch (err: any) {
       if (this.shouldFallback(config, err)) {
         console.warn(`Session SSL connection failed for ${key}, falling back to non-SSL`, err);
@@ -179,6 +210,15 @@ export class ConnectionManager {
         const nonSSLConfig = await this.createClientConfig(config, true);
         client = new Client(nonSSLConfig);
         await client.connect();
+        
+        // Apply read-only mode if configured
+        if (config.readOnlyMode) {
+          try {
+            await client.query('SET default_transaction_read_only = ON');
+          } catch (err) {
+            console.warn('Failed to set read-only mode:', err);
+          }
+        }
       } else {
         throw err;
       }

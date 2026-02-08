@@ -76,22 +76,22 @@
 
 ---
 
-## 🛡️ Phase 5: Safety & Confidence
+## 🛡️ Phase 5: Safety & Confidence ✅ COMPLETE
 
-### Safety & Trust
-- [ ] **Prod-aware write query confirmation**
-  - Implementation: Intercept execution in `QueryService`, check connection tags/regex, show modal warning.
-- [ ] **Read-only / Safe mode per connection**
-  - Implementation: `set_config('default_transaction_read_only', 'on')` on connection start or connection string param.
-- [ ] **Missing `WHERE` / large-table warnings**
-  - Implementation: Simple AST parsing or regex check before execution to detect potentially destructive queries on large tables.
+### Safety & Trust ✅ COMPLETE
+- [x] **Prod-aware write query confirmation**
+  - Implementation: QueryAnalyzer service detects dangerous operations (DROP, TRUNCATE, DELETE/UPDATE without WHERE, ALTER, INSERT, CREATE) with risk scoring based on environment. Shows modal warnings with "Execute", "Execute in Transaction", or Cancel options.
+- [x] **Read-only / Safe mode per connection**
+  - Implementation: `readOnlyMode` boolean field enforces `SET default_transaction_read_only = ON` on connection. Blocks all write operations at query execution level.
+- [x] **Missing `WHERE` / large-table warnings**
+  - Implementation: QueryAnalyzer uses regex detection to identify DELETE/UPDATE without WHERE clause. Flagged as critical/high severity with confirmation required on production.
 
-### Context & Navigation
+### Context & Navigation ✅ COMPLETE
 - [x] **Actionable breadcrumbs (click to switch)**
-- [ ] **Status-bar risk indicator**
-  - Implementation: Color-coded status bar (Red/Orange/Green) based on connection tag (Prod/Staging/Local).
-- [ ] **Reveal current object in explorer**
-  - Implementation: Use VS Code Tree View API `reveal` to sync explorer with active tab.
+- [x] **Status-bar risk indicator**
+  - Implementation: Third status bar item shows color-coded environment badges (🔴 PROD, 🟡 STAGING, 🟢 DEV, 🔒 READ-ONLY) with appropriate background colors. Clickable to show connection safety details.
+- [x] **Reveal current object in explorer**
+  - Implementation: `revealItem()` method in DatabaseTreeProvider with `revealInExplorer` command. Uses VS Code Tree View API to focus and expand tree items.
 
 ---
 

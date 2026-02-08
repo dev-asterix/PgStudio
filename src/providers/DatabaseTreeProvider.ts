@@ -15,6 +15,7 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
   private disconnectedConnections: Set<string> = new Set();
   private readonly _cache: SchemaCache = getSchemaCache();
   private readonly debouncer = new Debouncer();
+  private treeView?: vscode.TreeView<DatabaseTreeItem>;
 
   // Filter, Favorites, and Recent Items
   private _filterPattern: string = '';
@@ -33,6 +34,60 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
     this.initializeDisconnectedState();
     // Load persisted favorites and recent items
     this.loadPersistedData();
+  }
+
+  /**
+   * Set the tree view instance for reveal functionality
+   */
+  public setTreeView(treeView: vscode.TreeView<DatabaseTreeItem>): void {
+    this.treeView = treeView;
+  }
+
+  /**
+   * Reveal an item in the tree view
+   */
+  public async revealItem(connectionId: string, databaseName?: string, schema?: string, objectName?: string, objectType?: string): Promise<void> {
+    if (!this.treeView) {
+      console.warn('TreeView not initialized for reveal');
+      return;
+    }
+
+    try {
+      // Focus the tree view first
+      await vscode.commands.executeCommand('postgresExplorer.focus');
+
+      // Find the item to reveal
+      const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+      const connection = connections.find(c => c.id === connectionId);
+      
+      if (!connection) {
+        vscode.window.showWarningMessage('Connection not found');
+        return;
+      }
+
+      // Create the connection item
+      const connectionItem = new DatabaseTreeItem(
+        connection.name || `${connection.host}:${connection.port}`,
+        vscode.TreeItemCollapsibleState.Collapsed,
+        'connection',
+        connectionId
+      );
+
+      // Reveal with expand
+      await this.treeView.reveal(connectionItem, { select: true, focus: true, expand: 1 });
+
+      // If database is specified, try to expand and reveal it
+      if (databaseName) {
+        // TODO: Implement deeper reveal logic for database/schema/object
+        // This would require fetching children and finding the exact item
+        vscode.window.showInformationMessage(`Revealed connection: ${connection.name || connection.host}`);
+      } else {
+        vscode.window.showInformationMessage(`Revealed connection: ${connection.name || connection.host}`);
+      }
+    } catch (err) {
+      console.error('Error revealing item:', err);
+      vscode.window.showWarningMessage('Could not reveal item in explorer');
+    }
   }
 
   private loadPersistedData(): void {
@@ -330,7 +385,13 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
           undefined, // isInstalled
           undefined, // installedVersion
           undefined, // roleAttributes
-          this.disconnectedConnections.has(conn.id) // isDisconnected
+          this.disconnectedConnections.has(conn.id), // isDisconnected
+          undefined, // isFavorite
+          undefined, // count
+          undefined, // rowCount
+          undefined, // size
+          conn.environment, // environment
+          conn.readOnlyMode // readOnlyMode
         ));
       });
 
@@ -354,7 +415,13 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
         undefined, // isInstalled
         undefined, // installedVersion
         undefined, // roleAttributes
-        this.disconnectedConnections.has(conn.id) // isDisconnected
+        this.disconnectedConnections.has(conn.id), // isDisconnected
+        undefined, // isFavorite
+        undefined, // count
+        undefined, // rowCount
+        undefined, // size
+        conn.environment, // environment
+        conn.readOnlyMode // readOnlyMode
       ));
     }
 
@@ -1051,7 +1118,9 @@ export class DatabaseTreeItem extends vscode.TreeItem {
     public readonly isFavorite?: boolean,
     public readonly count?: number,  // For category item counts
     public readonly rowCount?: string | number, // Data row count
-    public readonly size?: string    // Data size
+    public readonly size?: string,   // Data size
+    public readonly environment?: 'production' | 'staging' | 'development',  // Environment tag
+    public readonly readOnlyMode?: boolean  // Read-only mode flag
   ) {
     super(label, collapsibleState);
     if (type === 'category' && label) {
@@ -1065,8 +1134,8 @@ export class DatabaseTreeItem extends vscode.TreeItem {
       // For favorites menu detection, we use description containing ★
       this.contextValue = isInstalled ? `${type}-installed` : type;
     }
-    this.tooltip = this.getTooltip(type, comment, roleAttributes);
-    this.description = this.getDescription(type, isInstalled, installedVersion, roleAttributes, isFavorite, count, rowCount, size);
+    this.tooltip = this.getTooltip(type, comment, roleAttributes, environment, readOnlyMode);
+    this.description = this.getDescription(type, isInstalled, installedVersion, roleAttributes, isFavorite, count, rowCount, size, environment, readOnlyMode);
     this.iconPath = {
       connection: new vscode.ThemeIcon('plug', isDisconnected ? new vscode.ThemeColor('disabledForeground') : new vscode.ThemeColor('charts.blue')),
       database: new vscode.ThemeIcon('database', new vscode.ThemeColor('charts.purple')),
@@ -1093,7 +1162,17 @@ export class DatabaseTreeItem extends vscode.TreeItem {
     }[type];
   }
 
-  private getTooltip(type: string, comment?: string, roleAttributes?: { [key: string]: boolean }): string {
+  private getTooltip(type: string, comment?: string, roleAttributes?: { [key: string]: boolean }, environment?: string, readOnlyMode?: boolean): string {
+    if (type === 'connection') {
+      const parts = [this.label];
+      if (environment) {
+        parts.push(`\nEnvironment: ${environment.charAt(0).toUpperCase() + environment.slice(1)}`);
+      }
+      if (readOnlyMode) {
+        parts.push('\nMode: Read-Only');
+      }
+      return parts.join('');
+    }
     if (type === 'role' && roleAttributes) {
       const attributes = [];
       if (roleAttributes.rolsuper) attributes.push('Superuser');
@@ -1105,10 +1184,23 @@ export class DatabaseTreeItem extends vscode.TreeItem {
     return comment ? `${this.label} \n\n${comment}` : this.label;
   }
 
-  private getDescription(type: string, isInstalled?: boolean, installedVersion?: string, roleAttributes?: { [key: string]: boolean }, isFavorite?: boolean, count?: number, rowCount?: string | number, size?: string): string | undefined {
+  private getDescription(type: string, isInstalled?: boolean, installedVersion?: string, roleAttributes?: { [key: string]: boolean }, isFavorite?: boolean, count?: number, rowCount?: string | number, size?: string, environment?: string, readOnlyMode?: boolean): string | undefined {
     let desc: string | undefined = undefined;
 
-    if (type === 'extension' && isInstalled) {
+    if (type === 'connection') {
+      const badges = [];
+      if (environment === 'production') {
+        badges.push('🔴 PROD');
+      } else if (environment === 'staging') {
+        badges.push('🟡 STAGING');
+      } else if (environment === 'development') {
+        badges.push('🟢 DEV');
+      }
+      if (readOnlyMode) {
+        badges.push('🔒');
+      }
+      return badges.length > 0 ? badges.join(' ') : undefined;
+    } else if (type === 'extension' && isInstalled) {
       desc = `v${installedVersion} (installed)`;
     } else if (type === 'role' && roleAttributes) {
       const tags = [];

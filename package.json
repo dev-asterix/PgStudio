@@ -970,6 +970,16 @@
               "group": {
                 "type": "string",
                 "description": "Group name for organizing connections"
+              },
+              "environment": {
+                "type": "string",
+                "enum": ["production", "staging", "development"],
+                "description": "Environment tag for safety warnings and visual indicators"
+              },
+              "readOnlyMode": {
+                "type": "boolean",
+                "default": false,
+                "description": "Force read-only transactions for this connection"
               }
             }
           }

@@ -82,6 +82,7 @@ export function registerProviders(context: vscode.ExtensionContext, outputChanne
 
   return {
     databaseTreeProvider,
+    treeView,
     chatViewProviderInstance
   };
 }

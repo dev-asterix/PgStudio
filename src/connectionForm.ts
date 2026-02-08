@@ -13,6 +13,9 @@ export interface ConnectionInfo {
   password?: string;
   database?: string;
   group?: string;
+  // Safety & confidence features
+  environment?: 'production' | 'staging' | 'development';
+  readOnlyMode?: boolean;
   // Advanced connection options
   sslmode?: 'disable' | 'allow' | 'prefer' | 'require' | 'verify-ca' | 'verify-full';
   sslCertPath?: string;
@@ -182,6 +185,9 @@ export class ConnectionFormPanel {
                 password: message.connection.password || undefined,
                 database: message.connection.database,
                 group: message.connection.group || undefined,
+                // Safety & confidence features
+                environment: message.connection.environment || undefined,
+                readOnlyMode: message.connection.readOnlyMode || undefined,
                 // Advanced options
                 sslmode: message.connection.sslmode || undefined,
                 sslCertPath: message.connection.sslCertPath || undefined,

@@ -8,6 +8,7 @@ import { SecretStorageService } from '../../services/SecretStorageService';
 import { ErrorService } from '../../services/ErrorService';
 import { QueryHistoryService } from '../../services/QueryHistoryService';
 import { getTransactionManager } from '../../services/TransactionManager';
+import { QueryAnalyzer } from '../../services/QueryAnalyzer';
 
 export class SqlExecutor {
   constructor(private readonly _controller: vscode.NotebookController) { }
@@ -65,6 +66,43 @@ export class SqlExecutor {
       const statements = SqlParser.splitSqlStatements(queryText);
 
       console.log('SqlExecutor: Executing', statements.length, 'statement(s)');
+
+      // Safety check: Analyze queries for dangerous operations
+      const queryAnalyzer = QueryAnalyzer.getInstance();
+      for (const stmt of statements) {
+        // Check read-only mode
+        if (connection.readOnlyMode && !queryAnalyzer.isReadOnlyQuery(stmt)) {
+          throw new Error('Write operations are not allowed in read-only mode');
+        }
+
+        // Analyze for dangerous operations
+        const analysis = queryAnalyzer.analyzeQuery(stmt, connection);
+        if (analysis.requiresConfirmation && analysis.warningMessage) {
+          const action = await vscode.window.showWarningMessage(
+            analysis.warningMessage,
+            { modal: true },
+            'Execute',
+            'Execute in Transaction'
+          );
+
+          if (!action) {
+            throw new Error('Query execution cancelled by user');
+          } else if (action === 'Execute in Transaction') {
+            // Wrap in transaction if not already in one
+            const txManager = getTransactionManager();
+            const sessionId = cell.notebook.uri.toString();
+            const txInfo = txManager.getTransactionInfo(sessionId);
+            
+            if (!txInfo || !txInfo.isActive) {
+              await client.query('BEGIN');
+              if (!txInfo) {
+                txManager.initializeSession(sessionId, true);
+              }
+              notices.push('Transaction started automatically for safety. Run COMMIT or ROLLBACK when done.');
+            }
+          }
+        }
+      }
 
       // Execute each statement
       for (let stmtIndex = 0; stmtIndex < statements.length; stmtIndex++) {
