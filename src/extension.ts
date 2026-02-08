@@ -4,6 +4,8 @@ import { PostgresMetadata } from './common/types';
 import { PostgresKernel } from './providers/NotebookKernel';
 import { ConnectionManager } from './services/ConnectionManager';
 import { SecretStorageService } from './services/SecretStorageService';
+import { ProfileManager } from './services/ProfileManager';
+import { SavedQueriesService } from './services/SavedQueriesService';
 import { ErrorHandlers } from './commands/helper';
 import { registerProviders } from './activation/providers';
 import { registerAllCommands } from './activation/commands';
@@ -15,6 +17,8 @@ import { ConnectionUtils } from './utils/connectionUtils';
 import { ExplainProvider } from './providers/ExplainProvider';
 
 export let outputChannel: vscode.OutputChannel;
+export let extensionContext: vscode.ExtensionContext;
+export let statusBar: NotebookStatusBar;
 
 let chatViewProvider: ChatViewProvider | undefined;
 
@@ -23,6 +27,7 @@ export function getChatViewProvider(): ChatViewProvider | undefined {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
+  extensionContext = context;
   outputChannel = vscode.window.createOutputChannel('PgStudio');
   outputChannel.appendLine('Activating PgStudio extension');
 
@@ -30,13 +35,18 @@ export async function activate(context: vscode.ExtensionContext) {
   ConnectionManager.getInstance();
   QueryHistoryService.initialize(context.workspaceState);
 
-  const { databaseTreeProvider, treeView, chatViewProviderInstance: chatView } = registerProviders(context, outputChannel);
+  // Phase 7: Initialize ProfileManager and SavedQueriesService
+  ProfileManager.getInstance().initialize(context);
+  SavedQueriesService.getInstance().initialize(context);
+  await ProfileManager.getInstance().initializeDefaultProfiles();
+
+  const { databaseTreeProvider, treeView, chatViewProviderInstance: chatView, savedQueriesTreeProvider } = registerProviders(context, outputChannel);
   chatViewProvider = chatView;
 
   // Store tree view instance for reveal functionality
   (databaseTreeProvider as any).setTreeView(treeView);
 
-  registerAllCommands(context, databaseTreeProvider, chatView, outputChannel);
+  registerAllCommands(context, databaseTreeProvider, chatView, outputChannel, savedQueriesTreeProvider);
 
   // Kernel initialization
   // Kernel initialization
@@ -67,7 +77,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const queryKernel = new PostgresKernel(context, 'postgres-query');
 
   // Status bar for connection/database display
-  const statusBar = new NotebookStatusBar();
+  statusBar = new NotebookStatusBar();
   context.subscriptions.push(statusBar);
 
   const rendererMessaging = vscode.notebooks.createRendererMessaging('postgres-query-renderer');

@@ -837,6 +837,66 @@
         "title": "Switch Database",
         "icon": "$(database)",
         "category": "PgStudio"
+      },
+      {
+        "command": "postgres-explorer.switchConnectionProfile",
+        "title": "Switch Connection Profile",
+        "icon": "$(person)",
+        "category": "PgStudio: Profiles"
+      },
+      {
+        "command": "postgres-explorer.createConnectionProfile",
+        "title": "Create Connection Profile",
+        "icon": "$(add)",
+        "category": "PgStudio: Profiles"
+      },
+      {
+        "command": "postgres-explorer.deleteConnectionProfile",
+        "title": "Delete Connection Profile",
+        "icon": "$(trash)",
+        "category": "PgStudio: Profiles"
+      },
+      {
+        "command": "postgres-explorer.saveQueryToLibrary",
+        "title": "Save Query to Library",
+        "icon": "$(save)",
+        "category": "PgStudio: Queries"
+      },
+      {
+        "command": "postgres-explorer.loadSavedQuery",
+        "title": "Load Saved Query",
+        "icon": "$(folder-opened)",
+        "category": "PgStudio: Queries"
+      },
+      {
+        "command": "postgres-explorer.deleteSavedQuery",
+        "title": "Delete Saved Query",
+        "icon": "$(trash)",
+        "category": "PgStudio: Queries"
+      },
+      {
+        "command": "postgres-explorer.searchSavedQueries",
+        "title": "Search Saved Queries",
+        "icon": "$(search)",
+        "category": "PgStudio: Queries"
+      },
+      {
+        "command": "postgres-explorer.showQueryRecommendations",
+        "title": "Show Query Recommendations",
+        "icon": "$(lightbulb)",
+        "category": "PgStudio: Queries"
+      },
+      {
+        "command": "postgres-explorer.exportSavedQueries",
+        "title": "Export Saved Queries",
+        "icon": "$(export)",
+        "category": "PgStudio: Queries"
+      },
+      {
+        "command": "postgres-explorer.importSavedQueries",
+        "title": "Import Saved Queries",
+        "icon": "$(import)",
+        "category": "PgStudio: Queries"
       }
     ],
     "submenus": [
@@ -890,6 +950,12 @@
           "name": "Connections",
           "contextualTitle": "PostgreSQL Explorer",
           "icon": "resources/postgres-vsc-icon.png"
+        },
+        {
+          "id": "postgresExplorer.savedQueries",
+          "name": "Saved Queries",
+          "contextualTitle": "PostgreSQL Explorer",
+          "icon": "$(save)"
         },
         {
           "id": "postgresExplorer.chatView",
@@ -1125,6 +1191,26 @@
           "command": "postgres-explorer.clearHistory",
           "when": "view == postgresExplorer.history",
           "group": "navigation"
+        },
+        {
+          "command": "postgres-explorer.switchConnectionProfile",
+          "when": "view == postgresExplorer",
+          "group": "1_phase7"
+        },
+        {
+          "command": "postgres-explorer.createConnectionProfile",
+          "when": "view == postgresExplorer",
+          "group": "1_phase7"
+        },
+        {
+          "command": "postgres-explorer.showQueryRecommendations",
+          "when": "view == postgresExplorer",
+          "group": "2_phase7"
+        },
+        {
+          "command": "postgres-explorer.loadSavedQuery",
+          "when": "view == postgresExplorer",
+          "group": "2_phase7"
         }
       ],
       "view/item/context": [

@@ -27,11 +27,27 @@ import { ConnectionFormPanel } from '../connectionForm';
 import { ConnectionManagementPanel } from '../connectionManagement';
 import { ConnectionUtils } from '../utils/connectionUtils';
 
+// Phase 7: Advanced Power User & AI features
+import {
+  switchConnectionProfile,
+  createConnectionProfile,
+  deleteConnectionProfile,
+  saveQueryToLibrary,
+  loadSavedQuery,
+  deleteSavedQuery,
+  exportSavedQueries,
+  importSavedQueries,
+  searchSavedQueries,
+  showQueryRecommendations
+} from '../commands/phase7';
+import { SavedQueriesTreeProvider } from '../providers/Phase7TreeProviders';
+
 export function registerAllCommands(
   context: vscode.ExtensionContext,
   databaseTreeProvider: DatabaseTreeProvider,
   chatViewProviderInstance: ChatViewProvider | undefined,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
+  savedQueriesTreeProvider?: SavedQueriesTreeProvider
 ) {
   const commands = [
     {
@@ -1068,6 +1084,48 @@ export function registerAllCommands(
         }
       }
     },
+    // Phase 7: Connection Profiles
+    {
+      command: 'postgres-explorer.switchConnectionProfile',
+      callback: () => switchConnectionProfile()
+    },
+    {
+      command: 'postgres-explorer.createConnectionProfile',
+      callback: () => createConnectionProfile()
+    },
+    {
+      command: 'postgres-explorer.deleteConnectionProfile',
+      callback: () => deleteConnectionProfile()
+    },
+    // Phase 7: Saved Queries
+    {
+      command: 'postgres-explorer.saveQueryToLibrary',
+      callback: () => saveQueryToLibrary()
+    },
+    {
+      command: 'postgres-explorer.loadSavedQuery',
+      callback: () => loadSavedQuery()
+    },
+    {
+      command: 'postgres-explorer.deleteSavedQuery',
+      callback: () => deleteSavedQuery()
+    },
+    {
+      command: 'postgres-explorer.exportSavedQueries',
+      callback: () => exportSavedQueries()
+    },
+    {
+      command: 'postgres-explorer.importSavedQueries',
+      callback: () => importSavedQueries()
+    },
+    {
+      command: 'postgres-explorer.searchSavedQueries',
+      callback: () => searchSavedQueries()
+    },
+    {
+      command: 'postgres-explorer.showQueryRecommendations',
+      callback: () => showQueryRecommendations()
+    },
   ];
 
   console.log('Starting command registration...');
@@ -1084,6 +1142,15 @@ export function registerAllCommands(
       outputChannel.appendLine(`Failed to register command ${command}: ${e}`);
     }
   });
+
+  // Phase 7: Register refresh commands for tree views
+  context.subscriptions.push(
+    vscode.commands.registerCommand('postgresExplorer.savedQueries.refresh', () => {
+      if (savedQueriesTreeProvider) {
+        savedQueriesTreeProvider.refresh();
+      }
+    })
+  );
 
   outputChannel.appendLine('All commands registered successfully.');
 }

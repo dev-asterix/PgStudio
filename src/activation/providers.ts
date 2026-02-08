@@ -6,6 +6,7 @@ import { PostgresNotebookSerializer } from '../postgresNotebook';
 import { AiCodeLensProvider } from '../providers/AiCodeLensProvider';
 import { QueryCodeLensProvider } from '../providers/QueryCodeLensProvider';
 import { QueryHistoryProvider } from '../providers/QueryHistoryProvider';
+import { ProfilesTreeProvider, SavedQueriesTreeProvider } from '../providers/Phase7TreeProviders';
 
 export function registerProviders(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
   // Create database tree provider instance
@@ -98,10 +99,17 @@ export function registerProviders(context: vscode.ExtensionContext, outputChanne
   // Store query history provider instance for command access
   context.workspaceState.update('queryHistoryProviderInstance', queryHistoryProvider);
 
+  // Phase 7: Register Saved Queries Tree Provider
+  const savedQueriesTreeProvider = new SavedQueriesTreeProvider();
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('postgresExplorer.savedQueries', savedQueriesTreeProvider)
+  );
+
   return {
     databaseTreeProvider,
     treeView,
     chatViewProviderInstance,
-    queryHistoryProvider
+    queryHistoryProvider,
+    savedQueriesTreeProvider
   };
 }

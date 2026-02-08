@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { PostgresMetadata } from '../common/types';
+import { extensionContext } from '../extension';
+import { ProfileManager } from '../services/ProfileManager';
 
 /**
  * Manages the notebook status bar items that display connection and database info.
@@ -9,6 +11,7 @@ export class NotebookStatusBar implements vscode.Disposable {
   private readonly connectionItem: vscode.StatusBarItem;
   private readonly databaseItem: vscode.StatusBarItem;
   private readonly riskIndicatorItem: vscode.StatusBarItem;
+  private readonly profileItem: vscode.StatusBarItem;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor() {
@@ -24,10 +27,15 @@ export class NotebookStatusBar implements vscode.Disposable {
     this.riskIndicatorItem.command = 'postgres-explorer.showConnectionSafety';
     this.riskIndicatorItem.tooltip = 'Click to view connection safety details';
 
+    this.profileItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
+    this.profileItem.command = 'postgres-explorer.switchConnectionProfile';
+    this.profileItem.tooltip = 'Click to switch connection profile';
+
     this.disposables.push(
       this.connectionItem,
       this.databaseItem,
       this.riskIndicatorItem,
+      this.profileItem,
       vscode.window.onDidChangeActiveNotebookEditor(() => this.update()),
       vscode.workspace.onDidChangeNotebookDocument((e) => {
         if (vscode.window.activeNotebookEditor?.notebook === e.notebook) {
@@ -76,6 +84,7 @@ export class NotebookStatusBar implements vscode.Disposable {
     this.connectionItem.hide();
     this.databaseItem.hide();
     this.riskIndicatorItem.hide();
+    this.profileItem.hide();
   }
 
   private showNoConnection(): void {
@@ -84,6 +93,7 @@ export class NotebookStatusBar implements vscode.Disposable {
     this.connectionItem.show();
     this.databaseItem.hide();
     this.riskIndicatorItem.hide();
+    this.profileItem.hide();
   }
 
   private showConnection(connection: any, metadata: PostgresMetadata): void {
@@ -101,9 +111,44 @@ export class NotebookStatusBar implements vscode.Disposable {
     // Show risk indicator based on environment
     this.updateRiskIndicator(connection);
 
+    // Show active profile if one is set
+    this.updateProfileIndicator();
+
     // Update context for when clauses
     vscode.commands.executeCommand('setContext', 'pgstudio.connectionName', connName);
     vscode.commands.executeCommand('setContext', 'pgstudio.databaseName', dbName);
+  }
+
+  private updateProfileIndicator(): void {
+    const editor = vscode.window.activeNotebookEditor;
+    if (!editor) {
+      this.profileItem.hide();
+      return;
+    }
+
+    const notebookKey = `activeProfile-${editor.notebook.uri.toString()}`;
+    const activeProfileContext = extensionContext?.globalState.get<any>(notebookKey);
+
+    if (!activeProfileContext) {
+      this.profileItem.hide();
+      return;
+    }
+
+    // Get the profile name from ProfileManager
+    const profileManager = ProfileManager.getInstance();
+    const profile = profileManager.getProfiles().find(p => p.id === activeProfileContext.profileId);
+    const profileName = profile?.profileName || 'Unknown Profile';
+
+    // Build status text with icons for active constraints
+    const constraints: string[] = [];
+    if (activeProfileContext.readOnlyMode) constraints.push('🔒 RO');
+    if (activeProfileContext.autoLimitSelectResults > 0) constraints.push(`📊 Limit: ${activeProfileContext.autoLimitSelectResults}`);
+    
+    const constraintText = constraints.length > 0 ? ` [${constraints.join(' | ')}]` : '';
+    
+    this.profileItem.text = `$(person) Profile: ${profileName}${constraintText}`;
+    this.profileItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+    this.profileItem.show();
   }
 
   private updateRiskIndicator(connection: any): void {

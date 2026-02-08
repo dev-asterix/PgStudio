@@ -137,6 +137,10 @@ function toggleAdvanced() {
   }
 }
 
+// Attach click event listeners to collapsible headers
+document.getElementById('ssh-header').addEventListener('click', toggleSSH);
+document.getElementById('advanced-header').addEventListener('click', toggleAdvanced);
+
 // SSL mode change handler - show cert fields for verify modes
 function updateSSLCertFields() {
   const sslmode = document.getElementById('sslmode').value;
