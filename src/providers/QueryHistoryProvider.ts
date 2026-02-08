@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { QueryHistoryService, QueryHistoryItem } from '../services/QueryHistoryService';
+import { NotebookBuilder } from '../commands/helper';
+import { PostgresMetadata } from '../common/types';
 
 interface HistoryGroup {
   type: 'group';
@@ -167,5 +169,108 @@ export class QueryHistoryProvider implements vscode.TreeDataProvider<HistoryNode
     }
     const date = new Date(timestamp);
     return date.toLocaleTimeString();
+  }
+
+  /**
+   * Rerun a query from history in a new notebook
+   */
+  public async rerunQuery(item: QueryHistoryItem): Promise<void> {
+    if (!item || !item.query) {
+      vscode.window.showErrorMessage('Invalid query item');
+      return;
+    }
+
+    try {
+      // Get active connection
+      const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+      
+      if (connections.length === 0) {
+        vscode.window.showErrorMessage('No database connections configured');
+        return;
+      }
+
+      // Find the connection by name or use the first one
+      let connection = connections.find(c => c.name === item.connectionName);
+      if (!connection) {
+        connection = connections[0];
+        vscode.window.showWarningMessage(`Original connection "${item.connectionName}" not found. Using "${connection.name}" instead.`);
+      }
+
+      // Create metadata for notebook
+      const metadata: PostgresMetadata = {
+        connectionId: connection.id,
+        databaseName: connection.database || 'postgres',
+        host: connection.host,
+        port: connection.port,
+        username: connection.username || '',
+        password: '' // Will be fetched from secure storage
+      };
+
+      // Create notebook with the query
+      await new NotebookBuilder(metadata)
+        .addSql(item.query)
+        .show();
+
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`Failed to rerun query: ${error.message}`);
+    }
+  }
+
+  /**
+   * Compare two queries side-by-side in diff editor
+   */
+  public async compareQueries(item1: QueryHistoryItem, item2?: QueryHistoryItem): Promise<void> {
+    if (!item1 || !item1.query) {
+      vscode.window.showErrorMessage('Invalid query item');
+      return;
+    }
+
+    try {
+      // If no second item, prompt user to select one
+      if (!item2) {
+        const history = QueryHistoryService.getInstance().getHistory()
+          .filter(h => h.id !== item1.id && !h.id.startsWith('trend-'));
+        
+        if (history.length === 0) {
+          vscode.window.showInformationMessage('No other queries to compare');
+          return;
+        }
+
+        const items = history.map(h => ({
+          label: h.query.replace(/\s+/g, ' ').substring(0, 60).trim() || '<empty query>',
+          description: new Date(h.timestamp).toLocaleString(),
+          item: h
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: 'Select query to compare with',
+          matchOnDescription: true
+        });
+
+        if (!selected) {
+          return;
+        }
+
+        item2 = selected.item;
+      }
+
+      // Create temporary documents for comparison
+      const doc1 = await vscode.workspace.openTextDocument({
+        content: item1.query,
+        language: 'sql'
+      });
+
+      const doc2 = await vscode.workspace.openTextDocument({
+        content: item2.query,
+        language: 'sql'
+      });
+
+      // Open diff editor
+      const title = `Query Comparison: ${new Date(item1.timestamp).toLocaleTimeString()} ↔ ${new Date(item2.timestamp).toLocaleTimeString()}`;
+      await vscode.commands.executeCommand('vscode.diff', doc1.uri, doc2.uri, title);
+
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`Failed to compare queries: ${error.message}`);
+    }
   }
 }

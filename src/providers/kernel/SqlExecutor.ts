@@ -13,6 +13,42 @@ import { QueryAnalyzer } from '../../services/QueryAnalyzer';
 export class SqlExecutor {
   constructor(private readonly _controller: vscode.NotebookController) { }
 
+  /**
+   * Apply auto-LIMIT to SELECT queries that don't already have one
+   */
+  private applyAutoLimit(query: string, connection: any): string {
+    // Check if auto-limit is enabled
+    const autoLimitEnabled = vscode.workspace.getConfiguration()
+      .get<boolean>('postgresExplorer.query.autoLimitEnabled', true);
+    
+    if (!autoLimitEnabled && !connection.readOnlyMode) {
+      return query;
+    }
+
+    // Get default limit
+    const defaultLimit = vscode.workspace.getConfiguration()
+      .get<number>('postgresExplorer.performance.defaultLimit', 1000);
+
+    // Only apply to SELECT queries
+    const trimmed = query.trim();
+    if (!/^\s*SELECT/i.test(trimmed)) {
+      return query;
+    }
+
+    // Check if query already has LIMIT
+    if (/\bLIMIT\s+\d+/i.test(query)) {
+      return query;
+    }
+
+    // Check for semicolon at end
+    const hasSemicolon = trimmed.endsWith(';');
+    const baseQuery = hasSemicolon ? trimmed.slice(0, -1) : trimmed;
+
+    // Apply LIMIT
+    const limitedQuery = `${baseQuery} LIMIT ${defaultLimit}${hasSemicolon ? ';' : ''}`;
+    return limitedQuery;
+  }
+
   public async executeCell(cell: vscode.NotebookCell) {
     console.log(`SqlExecutor: Starting cell execution. Controller ID: ${this._controller.id}`);
     const execution = this._controller.createNotebookCellExecution(cell);
@@ -106,8 +142,13 @@ export class SqlExecutor {
 
       // Execute each statement
       for (let stmtIndex = 0; stmtIndex < statements.length; stmtIndex++) {
-        const query = statements[stmtIndex];
+        let query = statements[stmtIndex];
         const stmtStartTime = Date.now();
+
+        // Apply auto-LIMIT if applicable
+        const originalQuery = query;
+        query = this.applyAutoLimit(query, connection);
+        const autoLimitApplied = query !== originalQuery;
 
         console.log(`SqlExecutor: Executing statement ${stmtIndex + 1}/${statements.length}:`, query.substring(0, 100));
 
@@ -122,6 +163,13 @@ export class SqlExecutor {
           result = await client.query(query);
           const stmtEndTime = Date.now();
           const executionTime = (stmtEndTime - stmtStartTime) / 1000;
+
+          // Add notice if auto-LIMIT was applied
+          if (autoLimitApplied) {
+            const defaultLimit = vscode.workspace.getConfiguration()
+              .get<number>('postgresExplorer.performance.defaultLimit', 1000);
+            notices.push(`ℹ️ Auto-LIMIT applied: Result set limited to ${defaultLimit} rows`);
+          }
 
           const success = true;
           const slowThresholdMs = vscode.workspace.getConfiguration().get<number>('postgresExplorer.performance.slowQueryThresholdMs', 2000);

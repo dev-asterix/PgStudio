@@ -15,9 +15,9 @@ import { cmdCreateForeignTable, cmdEditForeignTable, cmdForeignTableOperations, 
 import { cmdForeignDataWrapperOperations, cmdShowForeignDataWrapperProperties, cmdCreateForeignServer, cmdForeignServerOperations, cmdShowForeignServerProperties, cmdDropForeignServer, cmdCreateUserMapping, cmdUserMappingOperations, cmdShowUserMappingProperties, cmdDropUserMapping, cmdRefreshForeignDataWrapper, cmdRefreshForeignServer, cmdRefreshUserMapping } from '../commands/foreignDataWrappers';
 import { cmdCallFunction, cmdCreateFunction, cmdDropFunction, cmdEditFunction, cmdFunctionOperations, cmdRefreshFunction, cmdShowFunctionProperties } from '../commands/functions';
 import { cmdCreateMaterializedView, cmdDropMatView, cmdEditMatView, cmdMatViewOperations, cmdRefreshMatView, cmdViewMatViewData, cmdViewMatViewProperties } from '../commands/materializedViews';
-import { cmdNewNotebook } from '../commands/notebook';
+import { cmdNewNotebook, cmdExplainQuery } from '../commands/notebook';
 import { cmdCreateObjectInSchema, cmdCreateSchema, cmdSchemaOperations, cmdShowSchemaProperties } from '../commands/schema';
-import { cmdCreateTable, cmdDropTable, cmdEditTable, cmdInsertTable, cmdMaintenanceAnalyze, cmdMaintenanceReindex, cmdMaintenanceVacuum, cmdScriptCreate, cmdScriptDelete, cmdScriptInsert, cmdScriptSelect, cmdScriptUpdate, cmdShowTableProperties, cmdTableOperations, cmdTruncateTable, cmdUpdateTable, cmdViewTableData } from '../commands/tables';
+import { cmdCreateTable, cmdDropTable, cmdEditTable, cmdInsertTable, cmdMaintenanceAnalyze, cmdMaintenanceReindex, cmdMaintenanceVacuum, cmdScriptCreate, cmdScriptDelete, cmdScriptInsert, cmdScriptSelect, cmdScriptUpdate, cmdShowTableProperties, cmdTableOperations, cmdTruncateTable, cmdUpdateTable, cmdViewTableData, cmdTableProfile, cmdTableActivity, cmdIndexUsage, cmdTableDefinition } from '../commands/tables';
 import { cmdAllOperationsTypes, cmdCreateType, cmdDropType, cmdEditTypes, cmdRefreshType, cmdShowTypeProperties } from '../commands/types';
 import { cmdAddRole, cmdAddUser, cmdDropRole, cmdEditRole, cmdGrantRevokeRole, cmdRefreshRole, cmdRoleOperations, cmdShowRoleProperties } from '../commands/usersRoles';
 import { cmdCreateView, cmdDropView, cmdEditView, cmdRefreshView, cmdScriptCreate as cmdViewScriptCreate, cmdScriptSelect as cmdViewScriptSelect, cmdShowViewProperties, cmdViewData, cmdViewOperations } from '../commands/views';
@@ -95,6 +95,46 @@ export function registerAllCommands(
           await vscode.window.showTextDocument(doc);
         }
       }
+    },
+    {
+      command: 'postgres-explorer.rerunQuery',
+      callback: async (item: any) => {
+        const provider = context.workspaceState.get('queryHistoryProviderInstance') as any;
+        if (provider && item && typeof provider.rerunQuery === 'function') {
+          await provider.rerunQuery(item);
+        }
+      }
+    },
+    {
+      command: 'postgres-explorer.compareQueries',
+      callback: async (item: any) => {
+        const provider = context.workspaceState.get('queryHistoryProviderInstance') as any;
+        if (provider && item && typeof provider.compareQueries === 'function') {
+          await provider.compareQueries(item);
+        }
+      }
+    },
+    {
+      command: 'postgres-explorer.explainQuery',
+      callback: async (cellUri: vscode.Uri, analyze: boolean) => {
+        await cmdExplainQuery(cellUri, analyze);
+      }
+    },
+    {
+      command: 'postgres-explorer.tableProfile',
+      callback: async (item: DatabaseTreeItem) => await cmdTableProfile(item, context)
+    },
+    {
+      command: 'postgres-explorer.tableActivity',
+      callback: async (item: DatabaseTreeItem) => await cmdTableActivity(item, context)
+    },
+    {
+      command: 'postgres-explorer.indexUsage',
+      callback: async (item: DatabaseTreeItem) => await cmdIndexUsage(item, context)
+    },
+    {
+      command: 'postgres-explorer.tableDefinition',
+      callback: async (item: DatabaseTreeItem) => await cmdTableDefinition(item, context)
     },
     {
       command: 'postgres-explorer.filterTree',

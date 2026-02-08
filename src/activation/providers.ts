@@ -4,6 +4,7 @@ import { DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
 import { PostgresNotebookProvider } from '../notebookProvider';
 import { PostgresNotebookSerializer } from '../postgresNotebook';
 import { AiCodeLensProvider } from '../providers/AiCodeLensProvider';
+import { QueryCodeLensProvider } from '../providers/QueryCodeLensProvider';
 import { QueryHistoryProvider } from '../providers/QueryHistoryProvider';
 
 export function registerProviders(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
@@ -74,15 +75,33 @@ export function registerProviders(context: vscode.ExtensionContext, outputChanne
   );
   outputChannel.appendLine('AiCodeLensProvider registered for postgres and sql languages.');
 
+  // Register Query CodeLens Provider for EXPLAIN actions
+  const queryCodeLensProvider = new QueryCodeLensProvider();
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { language: 'postgres', scheme: 'vscode-notebook-cell' },
+      queryCodeLensProvider
+    ),
+    vscode.languages.registerCodeLensProvider(
+      { language: 'sql', scheme: 'vscode-notebook-cell' },
+      queryCodeLensProvider
+    )
+  );
+  outputChannel.appendLine('QueryCodeLensProvider registered for EXPLAIN actions.');
+
   // Register Query History Provider
   const queryHistoryProvider = new QueryHistoryProvider();
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('postgresExplorer.history', queryHistoryProvider)
   );
 
+  // Store query history provider instance for command access
+  context.workspaceState.update('queryHistoryProviderInstance', queryHistoryProvider);
+
   return {
     databaseTreeProvider,
     treeView,
-    chatViewProviderInstance
+    chatViewProviderInstance,
+    queryHistoryProvider
   };
 }

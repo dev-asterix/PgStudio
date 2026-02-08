@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - 0.8.1
+
+### Added
+- **Environment Tagging**: Connections can now be tagged as Production, Staging, or Development with visual badges (🔴 PROD, 🟡 STAGING, 🟢 DEV) in the tree view.
+- **Read-Only Mode**: Per-connection read-only enforcement that prevents all write operations (INSERT, UPDATE, DELETE, ALTER, DROP, TRUNCATE) at the PostgreSQL session level.
+- **Query Safety Analyzer**: New `QueryAnalyzer` service that detects dangerous operations before execution:
+    - Identifies DROP, TRUNCATE, DELETE/UPDATE without WHERE, ALTER, INSERT, and CREATE operations.
+    - Risk scoring system with environment-based multipliers (3x for production).
+    - Pre-execution confirmation dialogs for destructive queries.
+- **Status Bar Risk Indicator**: Color-coded status bar item showing current connection environment with clickable safety details:
+    - Red background for production connections.
+    - Orange for staging environments.
+    - Green for development.
+    - Lock icon (🔒) for read-only mode.
+- **Connection Safety Command**: New `showConnectionSafety` command displays environment, read-only status, and safety warnings.
+- **Reveal in Explorer**: Added ability to reveal and focus the current connection in the tree view from notebooks.
+
+### Improved
+- **Connection Form**: Enhanced with new "Safety & Security" section for environment selection and read-only mode toggle.
+- **Connection Management**: Environment and read-only settings now persist correctly when editing connections.
+
+---
+
 ## [0.8.0] - 2026-02-08
 
 ### Added
