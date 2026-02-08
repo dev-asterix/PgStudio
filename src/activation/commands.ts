@@ -33,8 +33,14 @@ import {
   createConnectionProfile,
   deleteConnectionProfile,
   saveQueryToLibrary,
+  saveQueryToLibraryUI,
   loadSavedQuery,
+  loadSavedQueryUI,
+  viewSavedQuery,
   deleteSavedQuery,
+  copySavedQuery,
+  editSavedQuery,
+  openSavedQueryInNotebook,
   exportSavedQueries,
   importSavedQueries,
   searchSavedQueries,
@@ -1107,10 +1113,6 @@ export function registerAllCommands(
       callback: () => loadSavedQuery()
     },
     {
-      command: 'postgres-explorer.deleteSavedQuery',
-      callback: () => deleteSavedQuery()
-    },
-    {
       command: 'postgres-explorer.exportSavedQueries',
       callback: () => exportSavedQueries()
     },
@@ -1125,6 +1127,34 @@ export function registerAllCommands(
     {
       command: 'postgres-explorer.showQueryRecommendations',
       callback: () => showQueryRecommendations()
+    },
+    {
+      command: 'postgres-explorer.saveQueryToLibraryUI',
+      callback: () => saveQueryToLibraryUI()
+    },
+    {
+      command: 'postgres-explorer.viewSavedQuery',
+      callback: (query: any) => viewSavedQuery(query)
+    },
+    {
+      command: 'postgres-explorer.copySavedQuery',
+      callback: (query: any) => copySavedQuery(query)
+    },
+    {
+      command: 'postgres-explorer.editSavedQuery',
+      callback: (query: any) => editSavedQuery(query)
+    },
+    {
+      command: 'postgres-explorer.openSavedQueryInNotebook',
+      callback: (query: any) => openSavedQueryInNotebook(query)
+    },
+    {
+      command: 'postgres-explorer.deleteSavedQuery',
+      callback: (query: any) => deleteSavedQuery(query)
+    },
+    {
+      command: 'postgres-explorer.loadSavedQueryUI',
+      callback: () => loadSavedQueryUI()
     },
   ];
 

@@ -22,6 +22,12 @@ export interface SavedQuery {
   usageCount: number;
   /** Optional connection preset ID to use with this query */
   preferredProfileId?: string;
+  /** Connection context for reopening with same DB */
+  connectionId?: string;
+  /** Database name to use when opening */
+  databaseName?: string;
+  /** Schema name for context */
+  schemaName?: string;
 }
 
 /**
@@ -86,6 +92,22 @@ export class SavedQueriesService {
     }
     if (!query.createdAt) {
       query.createdAt = Date.now();
+    }
+    this.queries.set(query.id, query);
+    await this.saveQueries();
+  }
+
+  /**
+   * Update an existing saved query.
+   */
+  async updateQuery(query: SavedQuery): Promise<void> {
+    if (!query.id) {
+      throw new Error('Cannot update query without ID');
+    }
+    // Preserve original createdAt date
+    const existing = this.queries.get(query.id);
+    if (existing) {
+      query.createdAt = existing.createdAt;
     }
     this.queries.set(query.id, query);
     await this.saveQueries();

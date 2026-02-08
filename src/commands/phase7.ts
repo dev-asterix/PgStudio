@@ -5,6 +5,10 @@ import { SavedQueriesService, SavedQuery } from '../services/SavedQueriesService
 import { QueryAnalyzer } from '../services/QueryAnalyzer';
 import { ErrorService } from '../services/ErrorService';
 import { extensionContext, statusBar } from '../extension';
+import { SaveQueryPanel } from '../SaveQueryPanel';
+import { SavedQueryDetailsPanel } from '../SavedQueryDetailsPanel';
+import { ConnectionUtils } from '../utils/connectionUtils';
+import { SecretStorageService } from '../services/SecretStorageService';
 
 /**
  * Phase 7 Advanced Power User & AI commands
@@ -329,9 +333,149 @@ export async function loadSavedQuery(): Promise<void> {
 }
 
 /**
- * Delete a saved query
+ * Copy a saved query to clipboard - context menu action
  */
-export async function deleteSavedQuery(): Promise<void> {
+export async function copySavedQuery(treeItem: any): Promise<void> {
+  // Handle both tree item (from context menu) and direct query object
+  const query = treeItem?.query || treeItem;
+  
+  if (!query) {
+    vscode.window.showWarningMessage('No query selected.');
+    return;
+  }
+
+  await vscode.env.clipboard.writeText(query.query);
+  vscode.window.showInformationMessage(`✓ Query copied to clipboard: "${query.title}"`);
+}
+
+/**
+ * Open a saved query in a new notebook with its original connection context
+ */
+export async function openSavedQueryInNotebook(treeItem: any): Promise<void> {
+  // Handle both tree item (from context menu) and direct query object
+  const query = treeItem?.query || treeItem;
+  
+  if (!query) {
+    vscode.window.showWarningMessage('No query selected.');
+    return;
+  }
+
+  try {
+    if (!query.connectionId) {
+      vscode.window.showWarningMessage('This query does not have a connection context. Please save it again from a notebook.');
+      return;
+    }
+
+    // Record usage
+    const service = SavedQueriesService.getInstance();
+    await service.recordUsage(query.id);
+
+    // Fetch the full connection details from config
+    const connection = ConnectionUtils.findConnection(query.connectionId);
+    if (!connection) {
+      vscode.window.showErrorMessage(`Connection "${query.connectionId}" not found. It may have been deleted.`);
+      return;
+    }
+
+    // Get the stored password from secret storage
+    const password = await SecretStorageService.getInstance().getPassword(query.connectionId);
+
+    // Build complete metadata for the notebook
+    const metadata = {
+      connectionId: query.connectionId,
+      databaseName: query.databaseName,
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      password: password || connection.password,
+      custom: {
+        cells: [],
+        metadata: {
+          connectionId: query.connectionId,
+          databaseName: query.databaseName,
+          schema: query.schemaName,
+          host: connection.host,
+          port: connection.port,
+          username: connection.username,
+          enableScripts: true
+        }
+      }
+    };
+
+    // Create notebook with SQL cell containing the query
+    const notebookData = new vscode.NotebookData([
+      new vscode.NotebookCellData(vscode.NotebookCellKind.Code, query.query, 'sql')
+    ]);
+    notebookData.metadata = metadata;
+
+    // Open notebook in the notebook editor
+    const notebook = await vscode.workspace.openNotebookDocument('postgres-notebook', notebookData);
+    await vscode.window.showNotebookDocument(notebook);
+
+    vscode.window.showInformationMessage(
+      `✓ Opened query: "${query.title}"${
+        query.databaseName ? ` (${query.databaseName})` : ''
+      }`
+    );
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    vscode.window.showErrorMessage(`Failed to open query: ${errorMessage}`);
+  }
+}
+
+/**
+ * Delete a saved query - context menu action
+ */
+export async function deleteSavedQuery(treeItem: any): Promise<void> {
+  // Handle both tree item (from context menu) and direct query object
+  const query = treeItem?.query || treeItem;
+  
+  if (!query) {
+    vscode.window.showWarningMessage('No query selected.');
+    return;
+  }
+
+  const confirm = await vscode.window.showWarningMessage(
+    `Delete saved query "${query.title}"?`,
+    { modal: true },
+    'Delete'
+  );
+
+  if (confirm === 'Delete') {
+    const service = SavedQueriesService.getInstance();
+    await service.deleteQuery(query.id);
+    vscode.window.showInformationMessage(`✓ Query deleted: "${query.title}"`);
+    vscode.commands.executeCommand('postgresExplorer.savedQueries.refresh');
+  }
+}
+
+/**
+ * Edit a saved query - opens the save panel in edit mode
+ */
+export async function editSavedQuery(treeItem: any): Promise<void> {
+  // Handle both tree item (from context menu) and direct query object
+  const query = treeItem?.query || treeItem;
+  
+  if (!query) {
+    vscode.window.showWarningMessage('No query selected.');
+    return;
+  }
+
+  if (!extensionContext) {
+    vscode.window.showErrorMessage('Extension context not available.');
+    return;
+  }
+
+  // Open the save panel in edit mode with the query data
+  const connectionMetadata = {
+    connectionId: query.connectionId,
+    databaseName: query.databaseName,
+    schemaName: query.schemaName
+  };
+
+  SaveQueryPanel.showForEdit(extensionContext.extensionUri, query, connectionMetadata);
+}
+async function deleteSavedQueryLegacy(): Promise<void> {
   const service = SavedQueriesService.getInstance();
   const queries = service.getQueries();
 
@@ -501,5 +645,141 @@ export async function showQueryRecommendations(): Promise<void> {
       content: selected.query.query,
     });
     await vscode.window.showTextDocument(doc);
+  }
+}
+
+/**
+ * Save current query to library
+ * Opens a webview form for better UX
+ */
+export async function saveQueryToLibraryUI(): Promise<void> {
+  const activeEditor = vscode.window.activeNotebookEditor;
+  
+  if (!activeEditor) {
+    vscode.window.showWarningMessage('No active notebook. Open a .pgsql notebook first.');
+    return;
+  }
+
+  // Get the currently selected/active cell
+  const notebook = activeEditor.notebook;
+  const selection = activeEditor.selections[0];
+  
+  if (!selection) {
+    vscode.window.showWarningMessage('No cell selected. Please select a SQL cell first.');
+    return;
+  }
+
+  // Get the cell at the selection
+  const cell = notebook.cellAt(selection.start);
+  
+  // Only allow SQL cells (not markdown)
+  if (cell.kind !== vscode.NotebookCellKind.Code) {
+    vscode.window.showWarningMessage('Please select a code cell (SQL query), not a markdown cell.');
+    return;
+  }
+
+  const queryText = cell.document.getText();
+
+  if (!queryText.trim()) {
+    vscode.window.showWarningMessage('The selected cell is empty. Please write a query first.');
+    return;
+  }
+
+  // Capture connection metadata from the notebook
+  const metadata = notebook.metadata as any;
+  const connectionMetadata = {
+    connectionId: metadata?.connectionId,
+    databaseName: metadata?.databaseName,
+    schemaName: metadata?.schema
+  };
+
+  // Show the save query panel with connection metadata
+  if (!extensionContext) {
+    vscode.window.showErrorMessage('Extension context not available.');
+    return;
+  }
+  SaveQueryPanel.show(extensionContext.extensionUri, queryText, connectionMetadata);
+}
+
+/**
+ * View a saved query in detail panel
+ * Shows the query, allows copying and deletion
+ */
+export async function viewSavedQuery(treeItem?: any): Promise<void> {
+  // Handle both tree item (from context menu) and direct query object
+  let query = treeItem?.query || treeItem;
+  
+  if (!query) {
+    // If no query passed, show a picker
+    const service = SavedQueriesService.getInstance();
+    const queries = service.getQueries();
+
+    if (queries.length === 0) {
+      vscode.window.showInformationMessage('No saved queries yet.');
+      return;
+    }
+
+    const items = queries.map((q) => ({
+      label: q.title,
+      description: q.description || `Used ${q.usageCount} times`,
+      query: q
+    }));
+
+    const selected = await vscode.window.showQuickPick(items, {
+      placeHolder: 'Select a query to view'
+    });
+
+    if (selected) {
+      query = selected.query;
+    } else {
+      return;
+    }
+  }
+
+  if (query) {
+    SavedQueryDetailsPanel.show(vscode.Uri.file(__dirname).with({ scheme: 'file' }).with({ path: vscode.Uri.file(__dirname).fsPath.replace(/src.*/, '') }), query);
+  }
+}
+
+/**
+ * Load a saved query into the active notebook
+ */
+export async function loadSavedQueryUI(): Promise<void> {
+  const activeEditor = vscode.window.activeNotebookEditor;
+
+  if (!activeEditor) {
+    vscode.window.showWarningMessage('No active notebook. Open a .pgsql notebook first.');
+    return;
+  }
+
+  const service = SavedQueriesService.getInstance();
+  const queries = service.getQueries();
+
+  if (queries.length === 0) {
+    vscode.window.showInformationMessage('No saved queries yet.');
+    return;
+  }
+
+  const items = queries.map((q) => ({
+    label: q.title,
+    description: q.description || `Used ${q.usageCount} times`,
+    query: q
+  }));
+
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select a query to load'
+  });
+
+  if (selected) {
+    // Record usage
+    await service.recordUsage(selected.query.id);
+
+    // Open the query in a new document
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'sql',
+      content: selected.query.query,
+    });
+    await vscode.window.showTextDocument(doc);
+    vscode.window.showInformationMessage(`✓ Loaded query: "${selected.query.title}"`);
   }
 }

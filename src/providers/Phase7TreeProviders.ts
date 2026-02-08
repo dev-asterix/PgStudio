@@ -40,10 +40,70 @@ class SavedQueryTreeItem extends vscode.TreeItem {
     public readonly query: any
   ) {
     super(query.title, vscode.TreeItemCollapsibleState.None);
-    this.description = query.description || `${query.usageCount} uses`;
-    this.tooltip = query.query;
+    
+    // Build description with metadata
+    const parts: string[] = [];
+    
+    // Add database name if available
+    if (query.databaseName) {
+      parts.push(`📊 ${query.databaseName}`);
+    }
+    
+    // Add connection name if available
+    if (query.connectionId) {
+      const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+      const connection = connections.find(c => c.id === query.connectionId);
+      if (connection) {
+        parts.push(`🔗 ${connection.name || connection.host}`);
+      }
+    }
+    
+    // Add usage count
+    parts.push(`${query.usageCount || 0}x used`);
+    
+    this.description = parts.join(' • ');
+    
+    // Build rich tooltip with all details
+    const createdDate = new Date(query.createdAt).toLocaleString();
+    const lastUsedDate = query.lastUsed ? new Date(query.lastUsed).toLocaleString() : 'Never';
+    const queryPreview = query.query.replace(/\n/g, ' ').substring(0, 120);
+    
+    const tooltipParts: string[] = [
+      `📝 ${queryPreview}${query.query.length > 120 ? '...' : ''}`,
+      '',
+      `📅 Created: ${createdDate}`,
+      `⏱️  Last Used: ${lastUsedDate}`,
+      `📊 Database: ${query.databaseName || 'N/A'}`,
+      `🔗 Schema: ${query.schemaName || 'N/A'}`
+    ];
+    
+    if (query.description) {
+      tooltipParts.push('', `📋 ${query.description}`);
+    }
+    
+    if (query.tags && query.tags.length > 0) {
+      tooltipParts.push('', `🏷️  Tags: ${query.tags.join(', ')}`);
+    }
+    
+    this.tooltip = tooltipParts.join('\n');
     this.contextValue = 'savedQuery';
     this.iconPath = new vscode.ThemeIcon('save');
+  }
+}
+
+/**
+ * Tree view item for query tags - shows count and can be expanded
+ */
+class TagTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly tag: string,
+    public readonly queryCount: number
+  ) {
+    super(`${tag} (${queryCount})`, vscode.TreeItemCollapsibleState.Collapsed);
+    this.description = `${queryCount} quer${queryCount === 1 ? 'y' : 'ies'}`;
+    this.tooltip = `Click to expand and see all queries tagged with "${tag}"`;
+    this.contextValue = 'tag';
+    this.iconPath = new vscode.ThemeIcon('tag');
   }
 }
 
@@ -105,6 +165,7 @@ export class SavedQueriesTreeProvider
 {
   private _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private _expandedTags = new Set<string>();
 
   constructor() {}
 
@@ -127,7 +188,70 @@ export class SavedQueriesTreeProvider
       return [noItemsItem];
     }
 
-    // Show recent queries first (up to 20)
-    return queries.slice(0, 20).map((query) => new SavedQueryTreeItem(query));
+    // If no element is provided, show root level with tags + untagged queries
+    if (!element) {
+      return this._getRootItems(queries);
+    }
+
+    // If a TagTreeItem was clicked, return queries with that tag
+    if (element instanceof TagTreeItem) {
+      return queries
+        .filter(q => q.tags && q.tags.includes(element.tag))
+        .map(q => new SavedQueryTreeItem(q));
+    }
+
+    return [];
+  }
+
+  private _getRootItems(queries: any[]): vscode.TreeItem[] {
+    // Collect all unique tags and their query counts
+    const tagMap = new Map<string, any[]>();
+    const untaggedQueries: any[] = [];
+
+    for (const query of queries) {
+      if (query.tags && query.tags.length > 0) {
+        for (const tag of query.tags) {
+          if (!tagMap.has(tag)) {
+            tagMap.set(tag, []);
+          }
+          tagMap.get(tag)!.push(query);
+        }
+      } else {
+        untaggedQueries.push(query);
+      }
+    }
+
+    const items: vscode.TreeItem[] = [];
+
+    // Add tag groups (sorted alphabetically)
+    const sortedTags = Array.from(tagMap.keys()).sort();
+    for (const tag of sortedTags) {
+      const queryCount = tagMap.get(tag)!.length;
+      items.push(new TagTreeItem(tag, queryCount));
+    }
+
+    // Add untagged queries section if there are any
+    if (untaggedQueries.length > 0) {
+      // Group untagged queries by database for better organization
+      const dbMap = new Map<string, any[]>();
+      for (const query of untaggedQueries) {
+        const db = query.databaseName || 'No Database';
+        if (!dbMap.has(db)) {
+          dbMap.set(db, []);
+        }
+        dbMap.get(db)!.push(query);
+      }
+
+      // If only one database, just show the queries
+      if (dbMap.size === 1) {
+        const [, dbQueries] = Array.from(dbMap.entries())[0];
+        items.push(...dbQueries.map(q => new SavedQueryTreeItem(q)));
+      } else {
+        // Show untagged queries (recent ones first, limit to 10)
+        items.push(...untaggedQueries.slice(0, 10).map(q => new SavedQueryTreeItem(q)));
+      }
+    }
+
+    return items;
   }
 }

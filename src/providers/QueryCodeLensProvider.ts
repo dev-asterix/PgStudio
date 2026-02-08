@@ -56,6 +56,15 @@ export class QueryCodeLensProvider implements vscode.CodeLensProvider {
       );
     }
 
+    // Add Save Query codelens for all queries
+    codeLenses.push(
+      new vscode.CodeLens(range, {
+        title: '$(save) Save Query',
+        tooltip: 'Save this query to the library for easy reuse',
+        command: 'postgres-explorer.saveQueryToLibraryUI'
+      })
+    );
+
     return codeLenses;
   }
 }
