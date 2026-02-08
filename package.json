@@ -797,16 +797,6 @@
         "icon": "$(go-to-file)"
       },
       {
-        "command": "postgres-explorer.rerunQuery",
-        "title": "Rerun Query",
-        "icon": "$(debug-restart)"
-      },
-      {
-        "command": "postgres-explorer.compareQueries",
-        "title": "Compare with...",
-        "icon": "$(diff)"
-      },
-      {
         "command": "postgres-explorer.deleteHistoryItem",
         "title": "Delete",
         "icon": "$(trash)"
@@ -1142,16 +1132,6 @@
         {
           "command": "postgres-explorer.openQuery",
           "when": "view == postgresExplorer.history",
-          "group": "1_modification"
-        },
-        {
-          "command": "postgres-explorer.rerunQuery",
-          "when": "view == postgresExplorer.history && viewItem == queryHistoryItem",
-          "group": "1_modification"
-        },
-        {
-          "command": "postgres-explorer.compareQueries",
-          "when": "view == postgresExplorer.history && viewItem == queryHistoryItem",
           "group": "1_modification"
         },
         {

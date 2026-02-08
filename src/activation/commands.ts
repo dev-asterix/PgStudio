@@ -97,24 +97,6 @@ export function registerAllCommands(
       }
     },
     {
-      command: 'postgres-explorer.rerunQuery',
-      callback: async (item: any) => {
-        const provider = context.workspaceState.get('queryHistoryProviderInstance') as any;
-        if (provider && item && typeof provider.rerunQuery === 'function') {
-          await provider.rerunQuery(item);
-        }
-      }
-    },
-    {
-      command: 'postgres-explorer.compareQueries',
-      callback: async (item: any) => {
-        const provider = context.workspaceState.get('queryHistoryProviderInstance') as any;
-        if (provider && item && typeof provider.compareQueries === 'function') {
-          await provider.compareQueries(item);
-        }
-      }
-    },
-    {
       command: 'postgres-explorer.explainQuery',
       callback: async (cellUri: vscode.Uri, analyze: boolean) => {
         await cmdExplainQuery(cellUri, analyze);

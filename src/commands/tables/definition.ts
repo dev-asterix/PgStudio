@@ -104,92 +104,70 @@ export async function cmdTableDefinition(item: DatabaseTreeItem, context: vscode
       const builder = new NotebookBuilder(metadata)
         .addMarkdown(
           MarkdownUtils.header(`📐 Table Definition: \`${item.schema}.${item.label}\``) +
-          MarkdownUtils.infoBox('Complete DDL, indexes, constraints, and relationships')
+          MarkdownUtils.infoBox('Complete DDL, indexes, constraints, and relationships.') +
+          '\n\n---'
         );
 
       // Table DDL
-      builder.addMarkdown(
-        MarkdownUtils.header('📝 CREATE TABLE Statement', '##') +
-        'Complete table definition including column names, types, and defaults.'
-      );
+      builder.addMarkdown('#### 📝 CREATE TABLE Statement');
 
-      builder.addMarkdown('```sql\n' + ddl + '\n```');
+      builder.addMarkdown('```sql\n' + ddl + '\n```\n\n---');
 
       // Constraints
-      builder.addMarkdown(
-        MarkdownUtils.header('🔒 Table Constraints', '##') +
-        'Primary keys, unique constraints, foreign keys, and check constraints.'
-      );
+      builder.addMarkdown('#### 🔒 Table Constraints');
 
       if (constraints.length === 0) {
-        builder.addMarkdown('*No constraints defined*');
+        builder.addMarkdown('*No constraints defined*\n\n---');
       } else {
         let constraintMarkdown = '| Name | Type | Definition |\n' +
           '|------|------|------------|\n';
         constraints.forEach((con: any) => {
           constraintMarkdown += `| \`${con.constraint_name}\` | ${con.constraint_type} | \`${con.definition}\` |\n`;
         });
-        builder.addMarkdown(constraintMarkdown);
+        builder.addMarkdown(constraintMarkdown + '\n---');
       }
 
       // Indexes
-      builder.addMarkdown(
-        MarkdownUtils.header('📑 Table Indexes', '##') +
-        'Index definitions for improved query performance.'
-      );
+      builder.addMarkdown('#### 📑 Table Indexes');
 
       if (indexes.length === 0) {
-        builder.addMarkdown('*No indexes defined*');
+        builder.addMarkdown('*No indexes defined*\n\n---');
       } else {
         indexes.forEach((idx: any) => {
           builder.addMarkdown(
-            MarkdownUtils.header(`\`${idx.indexname}\``, '###') +
+            `\n##### \`${idx.indexname}\`\n\n` +
             '```sql\n' + idx.indexdef + ';\n```'
           );
         });
+        builder.addMarkdown('\n---');
       }
 
       // Referencing tables
-      builder.addMarkdown(
-        MarkdownUtils.header('🔗 Referenced By (Incoming Foreign Keys)', '##') +
-        'Other tables that have foreign key relationships pointing to this table.'
-      );
+      builder.addMarkdown('#### 🔗 Referenced By (Incoming Foreign Keys)');
 
       if (referencingTables.length === 0) {
-        builder.addMarkdown('*No tables reference this table*');
+        builder.addMarkdown('*No tables reference this table*\n\n---');
       } else {
         let refMarkdown = '| Table | Constraint | Definition |\n' +
           '|-------|------------|------------|\n';
         referencingTables.forEach((ref: any) => {
           refMarkdown += `| \`${ref.referencing_table}\` | \`${ref.constraint_name}\` | \`${ref.definition}\` |\n`;
         });
-        builder.addMarkdown(refMarkdown);
+        builder.addMarkdown(refMarkdown + '\n---');
       }
 
       // SQL Query Details
-      builder.addMarkdown(
-        MarkdownUtils.header('📊 Query: Generate CREATE TABLE DDL', '##') +
-        'Reconstructs the CREATE TABLE statement from system catalog.'
-      )
-        .addSql(ddlQuery);
+      builder.addMarkdown('#### 📊 Query: Generate CREATE TABLE DDL\n\nReconstructs the CREATE TABLE statement from system catalog.');
+      builder.addSql(ddlQuery);
 
-      builder.addMarkdown(
-        MarkdownUtils.header('📑 Query: Table Indexes', '##') +
-        'Lists all indexes defined on this table.'
-      )
-        .addSql(indexQuery);
+      builder.addMarkdown('#### 📑 Query: Table Indexes\n\nLists all indexes defined on this table.');
+      builder.addSql(indexQuery);
 
-      builder.addMarkdown(
-        MarkdownUtils.header('🔒 Query: Constraints', '##') +
-        'Shows all constraints (PK, UNIQUE, FK, CHECK) on this table.'
-      )
-        .addSql(constraintQuery);
+      builder.addMarkdown('#### 🔒 Query: Constraints\n\nShows all constraints (PK, UNIQUE, FK, CHECK) on this table.');
+      builder.addSql(constraintQuery);
 
-      builder.addMarkdown(
-        MarkdownUtils.header('🔗 Query: Incoming Foreign Keys', '##') +
-        'Find all tables that have foreign key relationships to this table.'
-      )
-        .addSql(referencingQuery);
+      builder.addMarkdown('#### 🔗 Query: Incoming Foreign Keys\n\nFind all tables that have foreign key relationships to this table.');
+      builder.addSql(referencingQuery);
 
       await builder.show();
 

@@ -10,23 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - 0.8.1
 
 ### Added
-- **Environment Tagging**: Connections can now be tagged as Production, Staging, or Development with visual badges (🔴 PROD, 🟡 STAGING, 🟢 DEV) in the tree view.
-- **Read-Only Mode**: Per-connection read-only enforcement that prevents all write operations (INSERT, UPDATE, DELETE, ALTER, DROP, TRUNCATE) at the PostgreSQL session level.
-- **Query Safety Analyzer**: New `QueryAnalyzer` service that detects dangerous operations before execution:
-    - Identifies DROP, TRUNCATE, DELETE/UPDATE without WHERE, ALTER, INSERT, and CREATE operations.
-    - Risk scoring system with environment-based multipliers (3x for production).
-    - Pre-execution confirmation dialogs for destructive queries.
-- **Status Bar Risk Indicator**: Color-coded status bar item showing current connection environment with clickable safety details:
-    - Red background for production connections.
-    - Orange for staging environments.
-    - Green for development.
-    - Lock icon (🔒) for read-only mode.
-- **Connection Safety Command**: New `showConnectionSafety` command displays environment, read-only status, and safety warnings.
-- **Reveal in Explorer**: Added ability to reveal and focus the current connection in the tree view from notebooks.
+- **Connection Safety Features**: Environment tagging (🔴 PROD, 🟡 STAGING, 🟢 DEV), read-only mode enforcement, query safety analyzer with risk scoring, and status bar risk indicator.
+- **Auto-LIMIT for SELECT**: Automatically appends LIMIT clause to SELECT queries (default 1000 rows, configurable).
+- **EXPLAIN CodeLens**: One-click EXPLAIN/EXPLAIN ANALYZE buttons on SQL queries, results inserted directly into notebooks.
+- **Table Intelligence**: New table operations for comprehensive insights:
+    - **Profile**: Size breakdown, column statistics, and bloat metrics.
+    - **Activity Monitor**: Access patterns, modifications, maintenance history, and bloat warnings.
+    - **Index Usage**: Performance statistics with unused index detection.
+    - **Definition Viewer**: Complete DDL, constraints, indexes, and relationships.
 
 ### Improved
-- **Connection Form**: Enhanced with new "Safety & Security" section for environment selection and read-only mode toggle.
-- **Connection Management**: Environment and read-only settings now persist correctly when editing connections.
+- **Connection Form**: Enhanced with "Safety & Security" section for environment selection and read-only mode.
+- **Notebook Integration**: EXPLAIN results now insert directly into notebooks for seamless workflow.
 
 ---
 
