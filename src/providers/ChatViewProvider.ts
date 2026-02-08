@@ -53,6 +53,41 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Attach a database object to the chat
+   * Called from the @ inline button on tree items
+   */
+  public async attachDbObject(obj: DbObject): Promise<void> {
+    // Focus the chat view
+    if (this._view) {
+      this._view.show(true);
+    }
+
+    // Wait a bit for the view to be ready
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    if (!this._view) {
+      vscode.window.showWarningMessage('Chat view not available');
+      return;
+    }
+
+    try {
+      // Fetch schema details
+      const details = await this._dbObjectService.getObjectSchema(obj);
+      const objWithDetails = { ...obj, details };
+
+      // Send to webview
+      this._view.webview.postMessage({
+        type: 'addMentionFromTree',
+        object: objWithDetails
+      });
+
+    } catch (error) {
+      console.error('[ChatViewProvider] Failed to attach object:', error);
+      ErrorService.getInstance().showError('Failed to attach object to chat');
+    }
+  }
+
+  /**
    * Send a query and results to the chat as attachments
    * Called from the "Chat" CodeLens button or "Send to Chat" result button
    * Does NOT auto-send - waits for user to add their context
@@ -238,6 +273,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case 'getDbObjects':
           await this._handleGetAllDbObjects();
           break;
+        case 'getDbHierarchy':
+            await this._handleGetDbHierarchy(data.path);
+            break;
         case 'openAiSettings':
           vscode.commands.executeCommand('postgres-explorer.aiSettings');
           break;
@@ -364,23 +402,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       vscode.window.setStatusBarMessage(`$(sparkle) AI: ${modelInfo}`, 3000);
 
       this._aiService.setMessages(this._messages);
-      let response: string;
+      let responseText: string;
+      let usageInfo: string | undefined;
 
       if (provider === 'vscode-lm') {
         console.log('[ChatView] Calling VS Code LM API...');
-        response = await this._aiService.callVsCodeLm(aiMessage, config);
+        const result = await this._aiService.callVsCodeLm(aiMessage, config);
+        responseText = result.text;
+        usageInfo = result.usage;
       } else {
         console.log('[ChatView] Calling direct API:', provider);
-        response = await this._aiService.callDirectApi(provider, aiMessage, config);
+        const result = await this._aiService.callDirectApi(provider, aiMessage, config);
+        responseText = result.text;
+        usageInfo = result.usage;
       }
 
-      console.log('[ChatView] AI response received, length:', response.length);
+      console.log('[ChatView] AI response received, length:', responseText.length);
 
       // Sanitize response - remove any HTML-like patterns that shouldn't be there
       // This prevents the model from learning bad patterns from previous responses
-      response = this._sanitizeResponse(response);
+      responseText = this._sanitizeResponse(responseText);
 
-      this._messages.push({ role: 'assistant', content: response });
+      this._messages.push({ role: 'assistant', content: responseText, usage: usageInfo });
 
       await this._saveCurrentSession();
     } catch (error) {
@@ -417,12 +460,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async _handleSearchDbObjects(query: string): Promise<void> {
     try {
-      // First fetch if cache is empty
-      if (this._dbObjectService.getCache().length === 0) {
-        await this._dbObjectService.fetchDbObjects();
-      }
-
-      const filtered = this._dbObjectService.searchObjects(query);
+      const filtered = await this._dbObjectService.searchObjectsAsync(query);
 
       this._view?.webview.postMessage({
         type: 'dbObjectsResult',
@@ -453,10 +491,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async _handleGetAllDbObjects(): Promise<void> {
     try {
-      const objects = await this._dbObjectService.fetchDbObjects();
+      const objects = await this._dbObjectService.getInitialObjects();
       this._view?.webview.postMessage({
         type: 'dbObjectsResult',
-        objects: objects.slice(0, 50)
+        objects: objects
       });
     } catch (error) {
       this._view?.webview.postMessage({
@@ -465,6 +503,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         error: 'No database connections available'
       });
     }
+  }
+
+  private async _handleGetDbHierarchy(path: any): Promise<void> {
+     try {
+        let items: DbObject[] = [];
+
+        if (!path || !path.connectionId) {
+          items = await this._dbObjectService.getConnections();
+        } else if (!path.database) {
+          items = await this._dbObjectService.getDatabases(path.connectionId);
+        } else if (!path.schema) {
+          items = await this._dbObjectService.getSchemas(path.connectionId, path.database);
+        } else {
+          items = await this._dbObjectService.getSchemaObjects(path.connectionId, path.database, path.schema);
+        }
+        
+        this._view?.webview.postMessage({
+          type: 'dbHierarchyData',
+          path: path,
+          items: items
+        });
+
+     } catch (error) {
+         console.error('Error fetching hierarchy:', error);
+         this._view?.webview.postMessage({
+            type: 'dbHierarchyData',
+            path: path,
+            items: [],
+            error: 'Failed to load database objects'
+         });
+     }
   }
 
   // ==================== File Handling ====================

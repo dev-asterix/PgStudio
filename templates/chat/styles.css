@@ -414,6 +414,15 @@
             line-height: 1.6;
         }
 
+        .message-usage {
+            font-size: 10px;
+            color: var(--vscode-descriptionForeground);
+            margin-top: 4px;
+            text-align: right;
+            opacity: 0.7;
+            padding: 0 4px;
+        }
+
         .message-content pre {
             background-color: var(--vscode-textCodeBlock-background);
             padding: 12px;
@@ -1142,6 +1151,32 @@
             color: var(--vscode-descriptionForeground);
         }
 
+        .mention-breadcrumbs {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-bottom: 1px solid var(--vscode-widget-border);
+            font-size: 11px;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        .mention-breadcrumb-item {
+            cursor: pointer;
+            color: var(--vscode-textLink-foreground);
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .mention-breadcrumb-item:hover {
+            background: var(--vscode-list-hoverBackground);
+        }
+
+        .mention-breadcrumb-separator {
+            color: var(--vscode-descriptionForeground);
+        }
+
         .mention-picker-search {
             flex: 1;
             padding: 6px 10px;
@@ -1187,6 +1222,16 @@
             display: flex;
             align-items: center;
             gap: 6px;
+        }
+
+        .mention-item-meta {
+            font-size: 10px;
+            color: var(--vscode-descriptionForeground);
+            margin-left: 20px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            opacity: 0.8;
         }
 
         .mention-item-type {
@@ -1270,10 +1315,27 @@
         }
 
         .mention-chip .mention-name {
-            max-width: 100px;
+            max-width: 120px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            line-height: 1.2;
+        }
+
+        .mention-chip-content {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .mention-chip-meta {
+            font-size: 9px;
+            opacity: 0.85;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            line-height: 1.1;
         }
 
         .mention-chip .remove-btn {

@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { QueryHistoryService, QueryHistoryItem } from '../services/QueryHistoryService';
+import { NotebookBuilder } from '../commands/helper';
+import { PostgresMetadata } from '../common/types';
 
 interface HistoryGroup {
   type: 'group';
@@ -44,12 +46,14 @@ export class QueryHistoryProvider implements vscode.TreeDataProvider<HistoryNode
 
     const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
 
-    // Set command to open query on click
-    item.command = {
-      command: 'postgres-explorer.openQuery',
-      title: 'Open Query',
-      arguments: [historyItem]
-    };
+    // Set command to open query on click (skip for trend summary items)
+    if (!historyItem.id.startsWith('trend-')) {
+      item.command = {
+        command: 'postgres-explorer.openQuery',
+        title: 'Open Query',
+        arguments: [historyItem]
+      };
+    }
 
     const timeString = this.formatTime(historyItem.timestamp);
     item.description = timeString;
@@ -59,12 +63,15 @@ export class QueryHistoryProvider implements vscode.TreeDataProvider<HistoryNode
       .appendMarkdown(`**Status:** ${historyItem.success ? '✅ Success' : '❌ Failed'}\n`)
       .appendMarkdown(`**Duration:** ${historyItem.duration?.toFixed(3)}s\n`)
       .appendMarkdown(`**Rows:** ${historyItem.rowCount ?? '-'}\n`)
+      .appendMarkdown(`**Slow Query:** ${historyItem.slow ? '⚠️ Yes' : 'No'}\n`)
       .appendMarkdown(`**Connection:** ${historyItem.connectionName || '-'}`);
 
-    item.iconPath = new vscode.ThemeIcon(
-      historyItem.success ? 'check' : 'error',
-      historyItem.success ? new vscode.ThemeColor('testing.iconPassed') : new vscode.ThemeColor('testing.iconFailed')
-    );
+    const icon = historyItem.slow && historyItem.success ? 'warning' : (historyItem.success ? 'check' : 'error');
+    const color = historyItem.slow && historyItem.success
+      ? new vscode.ThemeColor('list.warningForeground')
+      : (historyItem.success ? new vscode.ThemeColor('testing.iconPassed') : new vscode.ThemeColor('testing.iconFailed'));
+
+    item.iconPath = new vscode.ThemeIcon(icon, color);
 
     item.contextValue = 'queryHistoryItem';
 
@@ -83,10 +90,23 @@ export class QueryHistoryProvider implements vscode.TreeDataProvider<HistoryNode
 
     try {
       const history = QueryHistoryService.getInstance().getHistory();
-      return this.groupHistory(history);
+      const trendGroup = this.buildTrendGroup();
+      return [trendGroup, ...this.groupHistory(history)];
     } catch (e) {
       return [];
     }
+  }
+
+  private buildTrendGroup(): HistoryGroup {
+    const stats = QueryHistoryService.getInstance().getTrendStats();
+    const items: QueryHistoryItem[] = [
+      { id: 'trend-avg', query: `Avg Duration: ${stats.avgMs.toFixed(1)} ms`, timestamp: Date.now(), success: true },
+      { id: 'trend-success', query: `Success Rate: ${(stats.successRate * 100).toFixed(1)}%`, timestamp: Date.now(), success: true },
+      { id: 'trend-slow', query: `Slow Queries: ${(stats.slowRate * 100).toFixed(1)}%`, timestamp: Date.now(), success: true },
+      { id: 'trend-total', query: `Total Queries: ${stats.total}`, timestamp: Date.now(), success: true }
+    ];
+
+    return { type: 'group', label: 'Trends (Recent)', items };
   }
 
   private groupHistory(items: QueryHistoryItem[]): HistoryGroup[] {
@@ -150,4 +170,6 @@ export class QueryHistoryProvider implements vscode.TreeDataProvider<HistoryNode
     const date = new Date(timestamp);
     return date.toLocaleTimeString();
   }
+
+
 }

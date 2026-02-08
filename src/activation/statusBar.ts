@@ -8,6 +8,7 @@ import { PostgresMetadata } from '../common/types';
 export class NotebookStatusBar implements vscode.Disposable {
   private readonly connectionItem: vscode.StatusBarItem;
   private readonly databaseItem: vscode.StatusBarItem;
+  private readonly riskIndicatorItem: vscode.StatusBarItem;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor() {
@@ -19,9 +20,14 @@ export class NotebookStatusBar implements vscode.Disposable {
     this.databaseItem.command = 'postgres-explorer.switchDatabase';
     this.databaseItem.tooltip = 'Click to switch database';
 
+    this.riskIndicatorItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
+    this.riskIndicatorItem.command = 'postgres-explorer.showConnectionSafety';
+    this.riskIndicatorItem.tooltip = 'Click to view connection safety details';
+
     this.disposables.push(
       this.connectionItem,
       this.databaseItem,
+      this.riskIndicatorItem,
       vscode.window.onDidChangeActiveNotebookEditor(() => this.update()),
       vscode.workspace.onDidChangeNotebookDocument((e) => {
         if (vscode.window.activeNotebookEditor?.notebook === e.notebook) {
@@ -69,6 +75,7 @@ export class NotebookStatusBar implements vscode.Disposable {
   private hide(): void {
     this.connectionItem.hide();
     this.databaseItem.hide();
+    this.riskIndicatorItem.hide();
   }
 
   private showNoConnection(): void {
@@ -76,6 +83,7 @@ export class NotebookStatusBar implements vscode.Disposable {
     this.connectionItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
     this.connectionItem.show();
     this.databaseItem.hide();
+    this.riskIndicatorItem.hide();
   }
 
   private showConnection(connection: any, metadata: PostgresMetadata): void {
@@ -90,9 +98,49 @@ export class NotebookStatusBar implements vscode.Disposable {
     this.databaseItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
     this.databaseItem.show();
 
+    // Show risk indicator based on environment
+    this.updateRiskIndicator(connection);
+
     // Update context for when clauses
     vscode.commands.executeCommand('setContext', 'pgstudio.connectionName', connName);
     vscode.commands.executeCommand('setContext', 'pgstudio.databaseName', dbName);
+  }
+
+  private updateRiskIndicator(connection: any): void {
+    if (!connection) {
+      this.riskIndicatorItem.hide();
+      return;
+    }
+
+    const environment = connection.environment;
+    const readOnlyMode = connection.readOnlyMode;
+
+    if (environment === 'production') {
+      this.riskIndicatorItem.text = readOnlyMode ? '$(shield) PROD (READ-ONLY)' : '$(alert) PRODUCTION';
+      this.riskIndicatorItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+      this.riskIndicatorItem.tooltip = readOnlyMode 
+        ? 'Production environment - Read-only mode active'
+        : '⚠️ Warning: Connected to PRODUCTION database';
+      this.riskIndicatorItem.show();
+    } else if (environment === 'staging') {
+      this.riskIndicatorItem.text = readOnlyMode ? '$(shield) STAGING (READ-ONLY)' : '$(info) STAGING';
+      this.riskIndicatorItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+      this.riskIndicatorItem.tooltip = readOnlyMode
+        ? 'Staging environment - Read-only mode active'
+        : 'Connected to STAGING database';
+      this.riskIndicatorItem.show();
+    } else if (environment === 'development' || readOnlyMode) {
+      if (readOnlyMode) {
+        this.riskIndicatorItem.text = '$(shield) READ-ONLY';
+        this.riskIndicatorItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+        this.riskIndicatorItem.tooltip = 'Read-only mode active';
+        this.riskIndicatorItem.show();
+      } else {
+        this.riskIndicatorItem.hide();
+      }
+    } else {
+      this.riskIndicatorItem.hide();
+    }
   }
 
   dispose(): void {

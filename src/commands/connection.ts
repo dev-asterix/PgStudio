@@ -209,3 +209,91 @@ export async function cmdConnectDatabase(item: DatabaseTreeItem, context: vscode
         await ErrorHandlers.handleCommandError(err, 'connect');
     }
 }
+
+/**
+ * Show connection safety details - displays environment and safety settings
+ */
+export async function showConnectionSafety(): Promise<void> {
+    try {
+        const editor = vscode.window.activeNotebookEditor;
+        if (!editor) {
+            vscode.window.showInformationMessage('No active PostgreSQL notebook');
+            return;
+        }
+
+        const metadata = editor.notebook.metadata as PostgresMetadata;
+        if (!metadata?.connectionId) {
+            vscode.window.showInformationMessage('No active connection');
+            return;
+        }
+
+        const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+        const connection = connections.find(c => c.id === metadata.connectionId);
+
+        if (!connection) {
+            vscode.window.showErrorMessage('Connection configuration not found');
+            return;
+        }
+
+        const environment = connection.environment || 'Not set';
+        const readOnlyMode = connection.readOnlyMode ? 'Enabled' : 'Disabled';
+        const environmentIcon = 
+            environment === 'production' ? '🔴' :
+            environment === 'staging' ? '🟡' :
+            environment === 'development' ? '🟢' : 'ℹ️';
+
+        const title = `${environmentIcon} ${connection.name || connection.host}`;
+        const message = [
+            `Environment: ${environment.charAt(0).toUpperCase() + environment.slice(1)}`,
+            `Read-Only Mode: ${readOnlyMode}`,
+            `Host: ${connection.host}:${connection.port}`,
+            `Database: ${metadata.databaseName || connection.database || 'default'}`,
+        ].join('\n');
+
+        const action = environment === 'production' 
+            ? 'Be extra careful with write operations!'
+            : 'Review connection settings';
+
+        const result = await vscode.window.showInformationMessage(
+            title,
+            { modal: true, detail: `${message}\n\n${action}` },
+            'Edit Connection'
+        );
+
+        if (result === 'Edit Connection') {
+            await vscode.commands.executeCommand('postgres-explorer.editConnection', 
+                new DatabaseTreeItem(
+                    connection.name || connection.host,
+                    vscode.TreeItemCollapsibleState.None,
+                    'connection',
+                    connection.id
+                )
+            );
+        }
+    } catch (err: any) {
+        await ErrorHandlers.handleCommandError(err, 'show connection safety');
+    }
+}
+
+/**
+ * Reveal connection in explorer - shows and selects the connection in the tree view
+ */
+export async function revealInExplorer(databaseTreeProvider: DatabaseTreeProvider): Promise<void> {
+    try {
+        const editor = vscode.window.activeNotebookEditor;
+        if (!editor) {
+            vscode.window.showInformationMessage('No active PostgreSQL notebook');
+            return;
+        }
+
+        const metadata = editor.notebook.metadata as PostgresMetadata;
+        if (!metadata?.connectionId) {
+            vscode.window.showInformationMessage('No active connection');
+            return;
+        }
+
+        await databaseTreeProvider.revealItem(metadata.connectionId, metadata.databaseName);
+    } catch (err: any) {
+        await ErrorHandlers.handleCommandError(err, 'reveal in explorer');
+    }
+}

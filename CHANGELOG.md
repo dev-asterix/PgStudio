@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - 0.8.1
+
+### Added
+- **Connection Safety Features**: Environment tagging (🔴 PROD, 🟡 STAGING, 🟢 DEV), read-only mode enforcement, query safety analyzer with risk scoring, and status bar risk indicator.
+- **Auto-LIMIT for SELECT**: Automatically appends LIMIT clause to SELECT queries (default 1000 rows, configurable).
+- **EXPLAIN CodeLens**: One-click EXPLAIN/EXPLAIN ANALYZE buttons on SQL queries, results inserted directly into notebooks.
+- **Table Intelligence**: New table operations for comprehensive insights:
+    - **Profile**: Size breakdown, column statistics, and bloat metrics.
+    - **Activity Monitor**: Access patterns, modifications, maintenance history, and bloat warnings.
+    - **Index Usage**: Performance statistics with unused index detection.
+    - **Definition Viewer**: Complete DDL, constraints, indexes, and relationships.
+
+### Improved
+- **Connection Form**: Enhanced with "Safety & Security" section for environment selection and read-only mode.
+- **Notebook Integration**: EXPLAIN results now insert directly into notebooks for seamless workflow.
+
+---
+
+## [0.8.0] - 2026-02-08
+
+### Added
+- **AI Usage Metrics**: AI service responses now include token usage information, displayed in the UI for transparency and monitoring.
+- **Comprehensive Test Suite**: Added extensive test utilities and unit tests for renderer components:
+    - `TestDatabaseSetup`: Manages test database connections and schema setup.
+    - `TestTimer` and `CoverageReporter`: Performance measurement and coverage reporting.
+    - Unit tests for notebook cell rendering, dashboard components, form validation, and accessibility features.
+- **EXPLAIN Plan Visualizer**: New `ExplainProvider` for visualizing EXPLAIN ANALYZE plans in an interactive webview.
+- **Transaction Management**: Advanced transaction control system:
+    - `TransactionToolbarManager`: Notebook toolbar for transaction controls.
+    - Support for savepoints, isolation levels, and auto-rollback features.
+    - Visual indicators for transaction status in notebooks.
+- **Row Deletion**: Added support for deleting rows directly from the table renderer.
+
+### Improved
+- **Schema Cache**: Implemented adaptive TTL that optimizes cache behavior based on access patterns.
+- **Connection Pool**: Added metrics and automatic idle timeout for better resource management.
+- **Tree View Performance**: 
+    - Debounced tree refresh to improve UI responsiveness during rapid operations.
+    - Support for tree view virtualization to handle large schemas efficiently.
+- **Chat Navigation**: Enhanced chat templates with breadcrumb navigation for improved database object selection.
+
+### Changed
+- **Edit Connection**: Added command to edit existing connection settings from the tree view.
+
+---
+
+## [0.7.9] - 2026-01-05
+
+### Fixed
+- **Changelog Loading**: Enhanced changelog loading to check multiple casing variants (CHANGELOG.md, changelog.md, Changelog.md) with detailed debug information.
+
+---
+
+## [0.7.7] - 2026-01-05
+
+### Fixed
+- **What's New Screen**: Fixed issues with the What's New welcome screen display and markdown rendering.
+
+---
+
 ## [0.7.6] - 2026-01-05
 
 ### Added

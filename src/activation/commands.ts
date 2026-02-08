@@ -7,7 +7,7 @@ import { ChatViewProvider } from '../providers/ChatViewProvider';
 import { cmdAiAssist } from '../commands/aiAssist';
 import { showColumnProperties, copyColumnName, copyColumnNameQuoted, generateSelectStatement, generateWhereClause, generateAlterColumnScript, generateDropColumnScript, generateRenameColumnScript, addColumnComment, generateIndexOnColumn, viewColumnStatistics, cmdAddColumn } from '../commands/columns';
 import { showConstraintProperties, copyConstraintName, generateDropConstraintScript, generateAlterConstraintScript, validateConstraint, generateAddConstraintScript, viewConstraintDependencies, cmdConstraintOperations, cmdAddConstraint } from '../commands/constraints';
-import { cmdConnectDatabase, cmdDisconnectConnection, cmdDisconnectDatabase, cmdReconnectConnection } from '../commands/connection';
+import { cmdConnectDatabase, cmdDisconnectConnection, cmdDisconnectDatabase, cmdReconnectConnection, showConnectionSafety, revealInExplorer } from '../commands/connection';
 import { showIndexProperties, copyIndexName, generateDropIndexScript, generateReindexScript, generateScriptCreate, analyzeIndexUsage, generateAlterIndexScript, addIndexComment, cmdIndexOperations, cmdAddIndex } from '../commands/indexes';
 import { cmdAddObjectInDatabase, cmdBackupDatabase, cmdCreateDatabase, cmdDatabaseDashboard, cmdDatabaseOperations, cmdDeleteDatabase, cmdDisconnectDatabase as cmdDisconnectDatabaseLegacy, cmdGenerateCreateScript, cmdMaintenanceDatabase, cmdPsqlTool, cmdQueryTool, cmdRestoreDatabase, cmdScriptAlterDatabase, cmdShowConfiguration } from '../commands/database';
 import { cmdDropExtension, cmdEnableExtension, cmdExtensionOperations, cmdRefreshExtension } from '../commands/extensions';
@@ -15,9 +15,9 @@ import { cmdCreateForeignTable, cmdEditForeignTable, cmdForeignTableOperations, 
 import { cmdForeignDataWrapperOperations, cmdShowForeignDataWrapperProperties, cmdCreateForeignServer, cmdForeignServerOperations, cmdShowForeignServerProperties, cmdDropForeignServer, cmdCreateUserMapping, cmdUserMappingOperations, cmdShowUserMappingProperties, cmdDropUserMapping, cmdRefreshForeignDataWrapper, cmdRefreshForeignServer, cmdRefreshUserMapping } from '../commands/foreignDataWrappers';
 import { cmdCallFunction, cmdCreateFunction, cmdDropFunction, cmdEditFunction, cmdFunctionOperations, cmdRefreshFunction, cmdShowFunctionProperties } from '../commands/functions';
 import { cmdCreateMaterializedView, cmdDropMatView, cmdEditMatView, cmdMatViewOperations, cmdRefreshMatView, cmdViewMatViewData, cmdViewMatViewProperties } from '../commands/materializedViews';
-import { cmdNewNotebook } from '../commands/notebook';
+import { cmdNewNotebook, cmdExplainQuery } from '../commands/notebook';
 import { cmdCreateObjectInSchema, cmdCreateSchema, cmdSchemaOperations, cmdShowSchemaProperties } from '../commands/schema';
-import { cmdCreateTable, cmdDropTable, cmdEditTable, cmdInsertTable, cmdMaintenanceAnalyze, cmdMaintenanceReindex, cmdMaintenanceVacuum, cmdScriptCreate, cmdScriptDelete, cmdScriptInsert, cmdScriptSelect, cmdScriptUpdate, cmdShowTableProperties, cmdTableOperations, cmdTruncateTable, cmdUpdateTable, cmdViewTableData } from '../commands/tables';
+import { cmdCreateTable, cmdDropTable, cmdEditTable, cmdInsertTable, cmdMaintenanceAnalyze, cmdMaintenanceReindex, cmdMaintenanceVacuum, cmdScriptCreate, cmdScriptDelete, cmdScriptInsert, cmdScriptSelect, cmdScriptUpdate, cmdShowTableProperties, cmdTableOperations, cmdTruncateTable, cmdUpdateTable, cmdViewTableData, cmdTableProfile, cmdTableActivity, cmdIndexUsage, cmdTableDefinition } from '../commands/tables';
 import { cmdAllOperationsTypes, cmdCreateType, cmdDropType, cmdEditTypes, cmdRefreshType, cmdShowTypeProperties } from '../commands/types';
 import { cmdAddRole, cmdAddUser, cmdDropRole, cmdEditRole, cmdGrantRevokeRole, cmdRefreshRole, cmdRoleOperations, cmdShowRoleProperties } from '../commands/usersRoles';
 import { cmdCreateView, cmdDropView, cmdEditView, cmdRefreshView, cmdScriptCreate as cmdViewScriptCreate, cmdScriptSelect as cmdViewScriptSelect, cmdShowViewProperties, cmdViewData, cmdViewOperations } from '../commands/views';
@@ -36,8 +36,19 @@ export function registerAllCommands(
   const commands = [
     {
       command: 'postgres-explorer.addConnection',
-      callback: (connection?: any) => {
-        ConnectionFormPanel.show(context.extensionUri, context, connection);
+      callback: () => {
+        // Explicitly pass undefined to force "Add" mode, ignoring any arguments VS Code might pass
+        ConnectionFormPanel.show(context.extensionUri, context, undefined);
+      }
+    },
+    {
+      command: 'postgres-explorer.editConnection',
+      callback: (item: DatabaseTreeItem) => {
+        if (!item || !item.connectionId) return;
+        const connection = ConnectionUtils.findConnection(item.connectionId);
+        if (connection) {
+          ConnectionFormPanel.show(context.extensionUri, context, connection);
+        }
       }
     },
     {
@@ -84,6 +95,28 @@ export function registerAllCommands(
           await vscode.window.showTextDocument(doc);
         }
       }
+    },
+    {
+      command: 'postgres-explorer.explainQuery',
+      callback: async (cellUri: vscode.Uri, analyze: boolean) => {
+        await cmdExplainQuery(cellUri, analyze);
+      }
+    },
+    {
+      command: 'postgres-explorer.tableProfile',
+      callback: async (item: DatabaseTreeItem) => await cmdTableProfile(item, context)
+    },
+    {
+      command: 'postgres-explorer.tableActivity',
+      callback: async (item: DatabaseTreeItem) => await cmdTableActivity(item, context)
+    },
+    {
+      command: 'postgres-explorer.indexUsage',
+      callback: async (item: DatabaseTreeItem) => await cmdIndexUsage(item, context)
+    },
+    {
+      command: 'postgres-explorer.tableDefinition',
+      callback: async (item: DatabaseTreeItem) => await cmdTableDefinition(item, context)
     },
     {
       command: 'postgres-explorer.filterTree',
@@ -783,6 +816,38 @@ export function registerAllCommands(
       }
     },
 
+    {
+      command: 'postgres-explorer.attachToChat',
+      callback: async (item: DatabaseTreeItem) => {
+        if (!chatViewProviderInstance) {
+          vscode.window.showWarningMessage('SQL Assistant is not available');
+          return;
+        }
+        if (!item || !item.connectionId || !item.databaseName) {
+          vscode.window.showErrorMessage('Invalid database object');
+          return;
+        }
+
+        // Resolve connection name from config
+        const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+        const conn = connections.find(c => c.id === item.connectionId);
+        const connectionName = conn?.name || conn?.host || 'Unknown';
+
+        // Convert DatabaseTreeItem to DbObject
+        const dbObject: any = {
+          name: item.label,
+          type: item.type,
+          schema: item.schema || '',
+          database: item.databaseName,
+          connectionId: item.connectionId,
+          connectionName: connectionName,
+          breadcrumb: [connectionName, item.databaseName, item.schema, item.label].filter(Boolean).join(' > ')
+        };
+
+        await chatViewProviderInstance.attachDbObject(dbObject);
+      }
+    },
+
     // Column commands
     {
       command: 'postgres-explorer.showColumnProperties',
@@ -937,6 +1002,14 @@ export function registerAllCommands(
           vscode.window.showInformationMessage(`Switched to: ${selected.name || selected.host}`);
         }
       }
+    },
+    {
+      command: 'postgres-explorer.showConnectionSafety',
+      callback: showConnectionSafety
+    },
+    {
+      command: 'postgres-explorer.revealInExplorer',
+      callback: () => revealInExplorer(databaseTreeProvider)
     },
     {
       command: 'postgres-explorer.navigateBreadcrumb',

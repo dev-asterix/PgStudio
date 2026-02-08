@@ -35,6 +35,96 @@ let dbObjects = [];
 let selectedMentions = [];
 let mentionPickerVisible = false;
 let selectedMentionIndex = -1;
+let searchDebounceTimer = null;
+let currentHierarchyPath = {
+    connection: null,
+    database: null,
+    schema: null
+};
+
+// Hierarchy Navigation
+function navigateToRoot() {
+    currentHierarchyPath = { connection: null, database: null, schema: null };
+    vscode.postMessage({ type: 'getDbHierarchy', path: {} });
+    renderBreadcrumbs();
+    mentionList.innerHTML = '<div class="mention-picker-loading">Loading connections...</div>';
+}
+
+function navigateToConnection(id, name) {
+    currentHierarchyPath = { 
+        connection: { id, name }, 
+        database: null, 
+        schema: null 
+    };
+    vscode.postMessage({ type: 'getDbHierarchy', path: { connectionId: id } });
+    renderBreadcrumbs();
+    mentionList.innerHTML = '<div class="mention-picker-loading">Loading databases...</div>';
+}
+
+function navigateToDatabase(dbName) {
+    if (!currentHierarchyPath.connection) return;
+    currentHierarchyPath.database = dbName;
+    currentHierarchyPath.schema = null;
+    vscode.postMessage({ 
+        type: 'getDbHierarchy', 
+        path: { 
+            connectionId: currentHierarchyPath.connection.id,
+            database: dbName
+        } 
+    });
+    renderBreadcrumbs();
+    mentionList.innerHTML = '<div class="mention-picker-loading">Loading schemas...</div>';
+}
+
+function navigateToSchema(schemaName) {
+    if (!currentHierarchyPath.connection || !currentHierarchyPath.database) return;
+    currentHierarchyPath.schema = schemaName;
+    vscode.postMessage({ 
+        type: 'getDbHierarchy', 
+        path: { 
+            connectionId: currentHierarchyPath.connection.id,
+            database: currentHierarchyPath.database,
+            schema: schemaName
+        } 
+    });
+    renderBreadcrumbs();
+    mentionList.innerHTML = '<div class="mention-picker-loading">Loading objects...</div>';
+}
+
+function renderBreadcrumbs() {
+    const container = document.getElementById('mentionBreadcrumbs');
+    if (!container) return;
+    
+    let html = `<div class="mention-breadcrumb-item" onclick="navigateToRoot()">Home</div>`;
+    
+    if (currentHierarchyPath.connection) {
+        html += `<span class="mention-breadcrumb-separator">/</span>`;
+        html += `<div class="mention-breadcrumb-item" onclick="navigateToConnection('${currentHierarchyPath.connection.id}', '${escapeHtml(currentHierarchyPath.connection.name)}')">${escapeHtml(currentHierarchyPath.connection.name)}</div>`;
+    }
+    
+    if (currentHierarchyPath.database) {
+        html += `<span class="mention-breadcrumb-separator">/</span>`;
+        html += `<div class="mention-breadcrumb-item" onclick="navigateToDatabase('${escapeHtml(currentHierarchyPath.database)}')">${escapeHtml(currentHierarchyPath.database)}</div>`;
+    }
+    
+    if (currentHierarchyPath.schema) {
+        html += `<span class="mention-breadcrumb-separator">/</span>`;
+        html += `<div class="mention-breadcrumb-item" onclick="navigateToSchema('${escapeHtml(currentHierarchyPath.schema)}')">${escapeHtml(currentHierarchyPath.schema)}</div>`;
+    }
+    
+    container.innerHTML = html;
+}
+
+function handleContainerClick(index) {
+    const obj = dbObjects[index];
+    if (obj.type === 'connection') {
+        navigateToConnection(obj.connectionId, obj.name);
+    } else if (obj.type === 'database') {
+        navigateToDatabase(obj.name);
+    } else if (obj.type === 'schema') {
+        navigateToSchema(obj.name);
+    }
+}
 
 // History functions
 function toggleHistory() {
@@ -178,9 +268,8 @@ function showMentionPicker() {
   mentionPicker.classList.add('visible');
   mentionSearch.value = '';
   mentionSearch.focus();
-  mentionList.innerHTML = '<div class="mention-picker-loading">Loading database objects...</div>';
-  console.log('[WebView] Sending getDbObjects message');
-  vscode.postMessage({ type: 'getDbObjects' });
+  // Start at root
+  navigateToRoot();
 }
 
 function hideMentionPicker() {
@@ -192,6 +281,20 @@ function hideMentionPicker() {
 
 function searchMentions(query) {
   console.log('[WebView] searchMentions:', query);
+  if (!query) {
+     const path = {};
+     if (currentHierarchyPath.connection) {
+         path.connectionId = currentHierarchyPath.connection.id;
+         if (currentHierarchyPath.database) {
+             path.database = currentHierarchyPath.database;
+             if (currentHierarchyPath.schema) {
+                 path.schema = currentHierarchyPath.schema;
+             }
+         }
+     }
+     vscode.postMessage({ type: 'getDbHierarchy', path });
+     return;
+  }
   vscode.postMessage({ type: 'searchDbObjects', query: query });
 }
 
@@ -202,9 +305,70 @@ function getDbTypeIcon(type) {
     'function': '⚙️',
     'materialized-view': '📦',
     'type': '🔤',
-    'schema': '📁'
+    'schema': '📁',
+    'database': '🗄️',
+    'connection': '🔌'
   };
   return icons[type] || '📄';
+}
+
+
+function renderHierarchyItems(items) {
+  console.log('[WebView] renderHierarchyItems called with', items.length, 'items');
+  dbObjects = items; 
+  
+  if (items.length === 0) {
+     mentionList.innerHTML = '<div class="mention-picker-empty">No items found.</div>';
+     return;
+  }
+  
+  let html = '';
+  
+  items.sort((a, b) => {
+      const aContainer = !!a.isContainer;
+      const bContainer = !!b.isContainer;
+      
+      if (aContainer && !bContainer) return -1;
+      if (!aContainer && bContainer) return 1;
+      return (a.name || '').localeCompare(b.name || '');
+  });
+  
+  items.forEach((obj, idx) => {
+      const isContainer = !!obj.isContainer;
+      let icon = getDbTypeIcon(obj.type);
+      
+      const clickHandler = isContainer 
+        ? `handleContainerClick(${idx})`
+        : `selectMention(${idx})`;
+        
+      const displayName = isContainer ? obj.name : (obj.schema ? obj.schema + '.' + obj.name : obj.name);
+
+      let metaHtml = '';
+      if (obj.type !== 'connection') {
+          const metaParts = [];
+          
+          if (obj.connectionName) {
+             metaParts.push(obj.connectionName);
+          }
+          if (obj.database && obj.type !== 'database') {
+             metaParts.push(obj.database);
+          }
+          
+          if (metaParts.length > 0) {
+              metaHtml = `<div class="mention-item-meta">${escapeHtml(metaParts.join(' • '))}</div>`;
+          }
+      }
+
+      html += `<div class="mention-item" data-index="${idx}" onclick="${clickHandler}" onmouseenter="highlightMention(${idx})">
+          <div class="mention-item-name">
+            <span class="db-type-icon">${icon}</span>
+            <span class="mention-item-label">${escapeHtml(displayName)}</span>
+          </div>
+          ${metaHtml}
+      </div>`;
+  });
+  
+  mentionList.innerHTML = html;
 }
 
 function renderDbObjects(objects) {
@@ -246,18 +410,32 @@ function renderDbObjects(objects) {
   let html = '';
   let globalIdx = 0;
 
+  // Helper to generate item HTML with metadata
+  const renderItem = (obj) => {
+    const idx = globalIdx++;
+    const metaParts = [];
+    if (obj.connectionName) metaParts.push(obj.connectionName);
+    if (obj.database) metaParts.push(obj.database);
+    
+    const metaHtml = metaParts.length > 0 
+        ? `<div class="mention-item-meta">${escapeHtml(metaParts.join(' • '))}</div>` 
+        : '';
+
+    return `<div class="mention-item" data-index="${idx}" onclick="selectMention(${idx})" onmouseenter="highlightMention(${idx})">
+      <div class="mention-item-name">
+        <span class="db-type-icon">${getDbTypeIcon(obj.type)}</span>
+        <span class="mention-item-label">${escapeHtml(obj.schema)}.${escapeHtml(obj.name)}</span>
+      </div>
+      ${metaHtml}
+    </div>`;
+  };
+
   // Render in type order
   typeOrder.forEach(type => {
     if (grouped[type] && grouped[type].length > 0) {
       html += '<div class="mention-group-header">' + (typeLabels[type] || type) + ' (' + grouped[type].length + ')</div>';
       grouped[type].forEach(obj => {
-        const idx = globalIdx++;
-        html += '<div class="mention-item" data-index="' + idx + '" onclick="selectMention(' + idx + ')" onmouseenter="highlightMention(' + idx + ')">' +
-          '<div class="mention-item-name">' +
-          '<span class="db-type-icon">' + getDbTypeIcon(obj.type) + '</span>' +
-          '<span class="mention-item-label">' + escapeHtml(obj.schema) + '.' + escapeHtml(obj.name) + '</span>' +
-          '</div>' +
-          '</div>';
+        html += renderItem(obj);
       });
     }
   });
@@ -267,16 +445,11 @@ function renderDbObjects(objects) {
     if (!typeOrder.includes(type) && grouped[type].length > 0) {
       html += '<div class="mention-group-header">' + (typeLabels[type] || type) + ' (' + grouped[type].length + ')</div>';
       grouped[type].forEach(obj => {
-        const idx = globalIdx++;
-        html += '<div class="mention-item" data-index="' + idx + '" onclick="selectMention(' + idx + ')" onmouseenter="highlightMention(' + idx + ')">' +
-          '<div class="mention-item-name">' +
-          '<span class="db-type-icon">' + getDbTypeIcon(obj.type) + '</span>' +
-          '<span class="mention-item-label">' + escapeHtml(obj.schema) + '.' + escapeHtml(obj.name) + '</span>' +
-          '</div>' +
-          '</div>';
+         html += renderItem(obj);
       });
     }
   });
+
 
   if (hasMore) {
     html += '<div class="mention-picker-more">' + (objects.length - MAX_DISPLAY) + ' more... (refine your search)</div>';
@@ -310,6 +483,13 @@ function selectMention(index) {
   const obj = dbObjects[index];
   if (!obj) return;
 
+  if (obj.isContainer) {
+    handleContainerClick(index);
+    mentionSearch.value = '';
+    mentionSearch.focus();
+    return;
+  }
+
   // Create mention object
   const mention = {
     name: obj.name,
@@ -317,6 +497,7 @@ function selectMention(index) {
     schema: obj.schema,
     database: obj.database,
     connectionId: obj.connectionId,
+    connectionName: obj.connectionName,
     breadcrumb: obj.breadcrumb
   };
 
@@ -395,9 +576,19 @@ function renderMentionChips() {
   selectedMentions.forEach((mention, index) => {
     const chip = document.createElement('div');
     chip.className = 'mention-chip';
+    
+    // Prepare metadata text
+    const metaParts = [];
+    if (mention.connectionName) metaParts.push(mention.connectionName);
+    if (mention.database) metaParts.push(mention.database);
+    const metaText = metaParts.join(' • ');
+
     chip.innerHTML = `
                     <span class="mention-icon">${getDbTypeIcon(mention.type)}</span>
-                    <span class="mention-name">@${mention.schema}.${mention.name}</span>
+                    <div class="mention-chip-content">
+                        <span class="mention-name">@${mention.schema}.${mention.name}</span>
+                        ${metaText ? `<span class="mention-chip-meta">${escapeHtml(metaText)}</span>` : ''}
+                    </div>
                     <button class="remove-btn" onclick="removeMention(${index})" title="Remove reference">
                         <svg viewBox="0 0 16 16" fill="currentColor">
                             <path d="M8 8.707l3.646 3.647.708-.707L8.707 8l3.647-3.646-.707-.708L8 7.293 4.354 3.646l-.708.708L7.293 8l-3.647 3.646.708.708L8 8.707z"/>
@@ -420,10 +611,14 @@ function handleChatInput(event) {
     if (!mentionPickerVisible) {
       showMentionPicker();
     }
-    // Search with the text after @
-    if (atMatch[1]) {
-      searchMentions(atMatch[1]);
+    // Debounced search with the text after @
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
     }
+    const searchQuery = atMatch[1];
+    searchDebounceTimer = setTimeout(() => {
+      searchMentions(searchQuery);
+    }, 250);
   } else if (mentionPickerVisible && !event.inputType?.includes('delete')) {
     // Hide picker if @ context is lost (but not on delete)
     hideMentionPicker();
@@ -1054,12 +1249,59 @@ window.addEventListener('message', event => {
     case 'updateHistory':
       renderHistory(message.sessions);
       break;
+    case 'dbHierarchyData':
+      if (message.error) {
+           mentionList.innerHTML = '<div class="mention-picker-empty">' + escapeHtml(message.error) + '</div>';
+      } else {
+           renderHierarchyItems(message.items);
+      }
+      break;
     case 'dbObjectsResult':
       console.log('[WebView] Received dbObjectsResult:', message.objects?.length || 0, 'objects');
       if (message.error) {
         mentionList.innerHTML = '<div class="mention-picker-empty">' + escapeHtml(message.error) + '</div>';
       } else {
         renderDbObjects(message.objects);
+      }
+      break;
+    case 'addMentionFromTree':
+      // Add object to selectedMentions from tree @ button
+      if (message.object) {
+        const mention = {
+          name: message.object.name,
+          type: message.object.type,
+          schema: message.object.schema,
+          database: message.object.database,
+          connectionId: message.object.connectionId,
+          connectionName: message.object.connectionName,
+          breadcrumb: message.object.breadcrumb,
+          schemaInfo: message.object.details
+        };
+
+        // Check if already selected
+        const exists = selectedMentions.find(m =>
+          m.name === mention.name &&
+          m.schema === mention.schema &&
+          m.database === mention.database
+        );
+
+        if (!exists) {
+          selectedMentions.push(mention);
+          renderMentionChips();
+        }
+
+        // Always ensure the text reference exists or append it
+        const mentionText = '@' + mention.schema + '.' + mention.name;
+        if (!chatInput.value.includes(mentionText)) {
+             const prefix = chatInput.value.length > 0 && !chatInput.value.endsWith(' ') ? ' ' : '';
+             chatInput.value += prefix + mentionText;
+        }
+
+        chatInput.focus();
+        // Move cursor to end
+        chatInput.selectionStart = chatInput.selectionEnd = chatInput.value.length;
+        
+        showToast('✅ Attached ' + mention.schema + '.' + mention.name + ' to chat', 'info');
       }
       break;
     case 'schemaError':
@@ -1188,7 +1430,15 @@ function renderMessages(messages, animate = false) {
         messageDiv.appendChild(roleDiv);
         messageDiv.appendChild(bubbleDiv);
         messagesContainer.insertBefore(messageDiv, typingIndicator);
-        typeText(contentDiv, msg.content);
+        typeText(contentDiv, msg.content, () => {
+          if (msg.usage) {
+            const usageDiv = document.createElement('div');
+            usageDiv.className = 'message-usage';
+            usageDiv.textContent = msg.usage;
+            messageDiv.appendChild(usageDiv);
+            messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
+          }
+        });
         return; // Skip the normal append below
       } else {
         contentDiv.innerHTML = parseMarkdown(msg.content);
@@ -1200,6 +1450,15 @@ function renderMessages(messages, animate = false) {
     bubbleDiv.appendChild(contentDiv);
     messageDiv.appendChild(roleDiv);
     messageDiv.appendChild(bubbleDiv);
+
+    // Append usage info if available
+    if (msg.usage) {
+      const usageDiv = document.createElement('div');
+      usageDiv.className = 'message-usage';
+      usageDiv.textContent = msg.usage;
+      messageDiv.appendChild(usageDiv);
+    }
+
     messagesContainer.insertBefore(messageDiv, typingIndicator);
   });
 

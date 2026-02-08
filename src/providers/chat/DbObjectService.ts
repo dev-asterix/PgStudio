@@ -2,12 +2,221 @@
  * Database object fetching service for @ mentions
  */
 import * as vscode from 'vscode';
-import { Client } from 'pg';
+import { Client, PoolClient } from 'pg';
 import { ConnectionManager } from '../../services/ConnectionManager';
+import { getSchemaCache, SchemaCache } from '../../lib/schema-cache';
 import { DbObject } from './types';
 
 export class DbObjectService {
   private _cache: DbObject[] = [];
+  private _dbListCache: SchemaCache = getSchemaCache();
+  private _lastSearchQuery = '';
+  private _lastSearchResults: DbObject[] = [];
+  private readonly SEARCH_MIN_CHARS = 2;
+  private readonly MAX_RESULTS = 100;
+  private readonly INITIAL_RESULTS = 40;
+
+  async getConnections(): Promise<DbObject[]> {
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+    return connections.map(conn => {
+       const connName = conn.name || conn.host;
+       return {
+          name: connName,
+          type: 'connection',
+          schema: '',
+          database: '',
+          connectionId: conn.id,
+          connectionName: connName,
+          breadcrumb: connName,
+          isContainer: true
+       };
+    });
+  }
+
+  async getDatabases(connectionId: string): Promise<DbObject[]> {
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+    const conn = connections.find(c => c.id === connectionId);
+    if (!conn) return [];
+
+    let client: PoolClient | undefined;
+    try {
+        const connName = conn.name || conn.host;
+        client = await ConnectionManager.getInstance().getPooledClient({
+          id: conn.id,
+          host: conn.host,
+          port: conn.port,
+          username: conn.username,
+          database: 'postgres',
+          name: conn.name
+        });
+        
+        if (!client) return [];
+
+        const dbListKey = SchemaCache.buildKey(conn.id, 'postgres', undefined, 'db-list');
+        const dbResult = await this._dbListCache.getOrFetch(dbListKey, async () => {
+          return await client!.query(
+            "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"
+          );
+        }, 300000);
+
+        return dbResult.rows.map(row => ({
+            name: row.datname,
+            type: 'database',
+            schema: '',
+            database: row.datname,
+            connectionId: conn.id,
+            connectionName: connName,
+            breadcrumb: `${connName} > ${row.datname}`,
+            isContainer: true
+        }));
+    } catch (e) {
+        console.error('Error fetching databases:', e);
+        return [];
+    }
+  }
+
+  async getSchemas(connectionId: string, database: string): Promise<DbObject[]> {
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+    const conn = connections.find(c => c.id === connectionId);
+    if (!conn) return [];
+
+    let client: PoolClient | undefined;
+    try {
+        const connName = conn.name || conn.host;
+        client = await ConnectionManager.getInstance().getPooledClient({
+            id: conn.id,
+            host: conn.host,
+            port: conn.port,
+            username: conn.username,
+            database: database,
+            name: conn.name
+        });
+
+        if (!client) return [];
+
+        const schemaKey = SchemaCache.buildKey(conn.id, database, undefined, 'schema-list');
+        const schemaResult = await this._dbListCache.getOrFetch(schemaKey, async () => {
+             return await client!.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname != 'information_schema' ORDER BY nspname"
+            );
+        }, 300000);
+
+         return schemaResult.rows.map(row => ({
+            name: row.nspname,
+            type: 'schema',
+            schema: row.nspname,
+            database: database,
+            connectionId: conn.id,
+            connectionName: connName,
+            breadcrumb: `${connName} > ${database} > ${row.nspname}`,
+            isContainer: true
+        }));
+    } catch (e) {
+        console.error('Error fetching schemas:', e);
+        return [];
+    }
+  }
+
+  async getSchemaObjects(connectionId: string, database: string, schema: string): Promise<DbObject[]> {
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+    const conn = connections.find(c => c.id === connectionId);
+    if (!conn) return [];
+    
+    const objects: DbObject[] = [];
+    let client: PoolClient | undefined;
+
+     try {
+        const connName = conn.name || conn.host;
+        client = await ConnectionManager.getInstance().getPooledClient({
+            id: conn.id,
+            host: conn.host,
+            port: conn.port,
+            username: conn.username,
+            database: database,
+            name: conn.name
+        });
+
+        if (!client) return [];
+
+         // Get tables
+         const tableResult = await client.query(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE'",
+            [schema]
+          );
+          for (const row of tableResult.rows) {
+            objects.push({
+              name: row.table_name,
+              type: 'table',
+              schema: schema,
+              database: database,
+              connectionId: conn.id,
+              connectionName: connName,
+              breadcrumb: `${connName} > ${database} > ${schema} > ${row.table_name}`,
+              isContainer: false
+            });
+          }
+
+          // Get views
+          const viewResult = await client.query(
+            "SELECT table_name FROM information_schema.views WHERE table_schema = $1",
+            [schema]
+          );
+           for (const row of viewResult.rows) {
+            objects.push({
+              name: row.table_name,
+              type: 'view',
+              schema: schema,
+              database: database,
+              connectionId: conn.id,
+              connectionName: connName,
+              breadcrumb: `${connName} > ${database} > ${schema} > ${row.table_name}`,
+              isContainer: false
+            });
+          }
+
+          // Get functions
+          const funcResult = await client.query(
+            "SELECT routine_name FROM information_schema.routines WHERE routine_schema = $1 AND routine_type = 'FUNCTION'",
+            [schema]
+          );
+           for (const row of funcResult.rows) {
+            objects.push({
+              name: row.routine_name,
+              type: 'function',
+              schema: schema,
+              database: database,
+              connectionId: conn.id,
+              connectionName: connName,
+              breadcrumb: `${connName} > ${database} > ${schema} > ${row.routine_name}`,
+              isContainer: false
+            });
+          }
+
+          // Get materialized views
+          const matViewResult = await client.query(
+            "SELECT matviewname FROM pg_matviews WHERE schemaname = $1",
+            [schema]
+          );
+          for (const row of matViewResult.rows) {
+            objects.push({
+                name: row.matviewname,
+                type: 'materialized-view',
+                schema: schema,
+                database: database,
+                connectionId: conn.id,
+                connectionName: connName,
+                breadcrumb: `${connName} > ${database} > ${schema} > ${row.matviewname}`,
+                isContainer: false
+            });
+          }
+
+          return objects;
+
+     } catch(e) {
+         console.error('Error fetching schema objects:', e);
+         return [];
+     }
+  }
 
   async fetchDbObjects(): Promise<DbObject[]> {
     const objects: DbObject[] = [];
@@ -21,7 +230,7 @@ export class DbObjectService {
     }
 
     for (const conn of connections) {
-      let client;
+      let client: PoolClient | undefined;
       try {
         const connName = conn.name || conn.host;
         console.log('[ChatView] Processing connection:', connName);
@@ -43,7 +252,7 @@ export class DbObjectService {
 
         for (const dbRow of dbResult.rows) {
           const dbName = dbRow.datname;
-          let dbClient;
+          let dbClient: PoolClient | undefined;
 
           try {
             dbClient = await ConnectionManager.getInstance().getPooledClient({
@@ -175,19 +384,174 @@ export class DbObjectService {
     return objects;
   }
 
-  private _schemaCache: Map<string, string> = new Map();
+  /**
+   * Optimized search for DB objects. Avoids full scans by querying server-side with limits.
+   */
+  async searchObjectsAsync(query: string): Promise<DbObject[]> {
+    const trimmed = query.trim();
+
+    if (trimmed.length < this.SEARCH_MIN_CHARS) {
+      // Return a small cached subset if available
+      return this._cache.slice(0, 20);
+    }
+
+    if (trimmed === this._lastSearchQuery && this._lastSearchResults.length > 0) {
+      return this._lastSearchResults;
+    }
+
+    const results = await this.fetchDbObjectsBySearch(trimmed, this.MAX_RESULTS, false);
+    this._lastSearchQuery = trimmed;
+    this._lastSearchResults = results;
+    return results;
+  }
+
+  /**
+   * Lightweight initial list to populate the picker quickly.
+   */
+  async getInitialObjects(): Promise<DbObject[]> {
+    const results = await this.fetchDbObjectsBySearch('', this.INITIAL_RESULTS, true);
+    this._cache = results;
+    return results;
+  }
+
+  private async fetchDbObjectsBySearch(query: string, maxResults: number, allowEmptyQuery: boolean): Promise<DbObject[]> {
+    const objects: DbObject[] = [];
+    const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+
+    if (connections.length === 0) return objects;
+    if (!allowEmptyQuery && query.length < this.SEARCH_MIN_CHARS) return objects;
+
+    const like = `%${query}%`;
+    const perDbLimit = 25;
+
+    for (const conn of connections) {
+      if (objects.length >= maxResults) break;
+
+      let client: PoolClient | undefined;
+      try {
+        const connName = conn.name || conn.host;
+
+        client = await ConnectionManager.getInstance().getPooledClient({
+          id: conn.id,
+          host: conn.host,
+          port: conn.port,
+          username: conn.username,
+          database: 'postgres',
+          name: conn.name
+        });
+
+        if (!client) {
+          throw new Error('Failed to acquire connection client');
+        }
+        const clientRef = client;
+
+        const dbListKey = SchemaCache.buildKey(conn.id, 'postgres', undefined, 'db-list');
+        const dbResult = await this._dbListCache.getOrFetch(dbListKey, async () => {
+          return await clientRef.query(
+            "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"
+          );
+        }, 300000);
+
+        for (const dbRow of dbResult.rows) {
+          if (objects.length >= maxResults) break;
+
+          const dbName = dbRow.datname;
+          let dbClient: PoolClient | undefined;
+
+          try {
+            dbClient = await ConnectionManager.getInstance().getPooledClient({
+              id: conn.id,
+              host: conn.host,
+              port: conn.port,
+              username: conn.username,
+              database: dbName,
+              name: conn.name
+            });
+
+            if (query.length > 0) {
+              const searchResult = await dbClient.query(
+                `SELECT 'table' as type, n.nspname as schema, c.relname as name
+                 FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+                   AND c.relkind IN ('r', 'v', 'm', 'f', 'p')
+                   AND c.relname ILIKE $1
+                 UNION ALL
+                 SELECT 'function' as type, n.nspname as schema, p.proname as name
+                 FROM pg_proc p
+                 JOIN pg_namespace n ON n.oid = p.pronamespace
+                 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+                   AND p.proname ILIKE $1
+                 LIMIT $2`,
+                [like, perDbLimit]
+              );
+
+              for (const row of searchResult.rows) {
+                if (objects.length >= maxResults) break;
+                objects.push({
+                  name: row.name,
+                  type: row.type,
+                  schema: row.schema,
+                  database: dbName,
+                  connectionId: conn.id,
+                  connectionName: connName,
+                  breadcrumb: `${connName} > ${dbName} > ${row.schema} > ${row.name}`
+                });
+              }
+            } else if (allowEmptyQuery) {
+              const initialResult = await dbClient.query(
+                `SELECT 'table' as type, n.nspname as schema, c.relname as name
+                 FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+                   AND c.relkind IN ('r', 'v', 'm')
+                 ORDER BY c.relpages DESC NULLS LAST
+                 LIMIT $1`,
+                [perDbLimit]
+              );
+
+              for (const row of initialResult.rows) {
+                if (objects.length >= maxResults) break;
+                objects.push({
+                  name: row.name,
+                  type: row.type,
+                  schema: row.schema,
+                  database: dbName,
+                  connectionId: conn.id,
+                  connectionName: connName,
+                  breadcrumb: `${connName} > ${dbName} > ${row.schema} > ${row.name}`
+                });
+              }
+            }
+          } catch (e) {
+            console.error('[ChatView] Search error in db ' + dbName + ':', e);
+          } finally {
+            if (dbClient) dbClient.release();
+          }
+        }
+      } catch (e) {
+        console.error('[ChatView] Search error in connection ' + conn.name + ':', e);
+      } finally {
+        if (client) client.release();
+      }
+    }
+
+    return objects;
+  }
+
+  private _objectSchemaCache: Map<string, string> = new Map();
   private readonly MAX_CACHE_SIZE = 50;
 
   async getObjectSchema(obj: DbObject): Promise<string> {
     const cacheKey = `${obj.connectionId}:${obj.schema}:${obj.name}:${obj.type}`;
 
     // Check cache first
-    if (this._schemaCache.has(cacheKey)) {
+    if (this._objectSchemaCache.has(cacheKey)) {
       console.log('[ChatView] Cache hit for:', cacheKey);
       // Refresh LRU order (delete and re-add)
-      const content = this._schemaCache.get(cacheKey)!;
-      this._schemaCache.delete(cacheKey);
-      this._schemaCache.set(cacheKey, content);
+      const content = this._objectSchemaCache.get(cacheKey)!;
+      this._objectSchemaCache.delete(cacheKey);
+      this._objectSchemaCache.set(cacheKey, content);
       return content;
     }
 
@@ -195,7 +559,7 @@ export class DbObjectService {
     const conn = connections.find(c => c.id === obj.connectionId);
     if (!conn) { return 'Connection not found'; }
 
-    let client;
+    let client: PoolClient | undefined;
     try {
       client = await ConnectionManager.getInstance().getPooledClient({
         id: conn.id,
@@ -231,11 +595,11 @@ export class DbObjectService {
       }
 
       // Update cache with LRU eviction
-      if (this._schemaCache.size >= this.MAX_CACHE_SIZE) {
-        const firstKey = this._schemaCache.keys().next().value;
-        if (firstKey) this._schemaCache.delete(firstKey);
+      if (this._objectSchemaCache.size >= this.MAX_CACHE_SIZE) {
+        const firstKey = this._objectSchemaCache.keys().next().value;
+        if (firstKey) this._objectSchemaCache.delete(firstKey);
       }
-      this._schemaCache.set(cacheKey, schemaInfo);
+      this._objectSchemaCache.set(cacheKey, schemaInfo);
 
       return schemaInfo;
 
@@ -247,8 +611,9 @@ export class DbObjectService {
   }
 
   clearCache(): void {
-    this._schemaCache.clear();
-    console.log('[ChatView] Schema cache cleared');
+    this._objectSchemaCache.clear();
+    this._dbListCache.clear();
+    console.log('[ChatView] Schema caches cleared');
   }
 
   private async _getTableSchema(client: any, schema: string, table: string): Promise<string> {

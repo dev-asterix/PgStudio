@@ -6,18 +6,86 @@ import { SecretStorageService } from './SecretStorageService';
 import { SSHService } from './SSHService';
 import { ErrorService } from './ErrorService';
 
+export interface PoolMetrics {
+  connectionId: string;
+  totalConnections: number;
+  idleConnections: number;
+  waitingRequests: number;
+  createdAt: number;
+  lastActivity: number;
+}
+
 export class ConnectionManager {
   private static instance: ConnectionManager;
   private pools: Map<string, Pool> = new Map();
   private sessions: Map<string, Client> = new Map();
+  private poolMetrics: Map<string, PoolMetrics> = new Map();
+  
+  // Configuration for pool management
+  private readonly IDLE_TIMEOUT = 300000; // 5 minutes
+  private readonly CLEANUP_INTERVAL = 60000; // Check every 1 minute
+  private cleanupTimer?: NodeJS.Timeout;
 
-  private constructor() { }
+  private constructor() {
+    // Start background cleanup of idle pools
+    this.startCleanupRoutine();
+  }
 
   public static getInstance(): ConnectionManager {
     if (!ConnectionManager.instance) {
       ConnectionManager.instance = new ConnectionManager();
     }
     return ConnectionManager.instance;
+  }
+
+  /**
+   * Start background cleanup routine for idle connections
+   */
+  private startCleanupRoutine(): void {
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupIdlePools();
+    }, this.CLEANUP_INTERVAL);
+  }
+
+  /**
+   * Close idle pools that haven't been used recently
+   */
+  private async cleanupIdlePools(): Promise<void> {
+    const now = Date.now();
+    const poolsToClose: string[] = [];
+
+    for (const [key, metrics] of this.poolMetrics.entries()) {
+      if (now - metrics.lastActivity > this.IDLE_TIMEOUT && metrics.totalConnections === 0) {
+        poolsToClose.push(key);
+      }
+    }
+
+    for (const key of poolsToClose) {
+      const pool = this.pools.get(key);
+      if (pool) {
+        try {
+          await pool.end();
+          this.pools.delete(key);
+          this.poolMetrics.delete(key);
+        } catch (err) {
+          console.error(`Error closing idle pool ${key}:`, err);
+        }
+      }
+    }
+  }
+
+  /**
+   * Get metrics for a connection pool
+   */
+  public getPoolMetrics(connectionId: string): PoolMetrics | undefined {
+    return this.poolMetrics.get(connectionId);
+  }
+
+  /**
+   * Get all pool metrics
+   */
+  public getAllPoolMetrics(): PoolMetrics[] {
+    return Array.from(this.poolMetrics.values());
   }
 
   private isSSLFailure(err: any): boolean {
@@ -53,7 +121,18 @@ export class ConnectionManager {
     }
 
     try {
-      return await pool.connect();
+      const client = await pool.connect();
+      
+      // Apply read-only mode if configured
+      if (config.readOnlyMode) {
+        try {
+          await client.query('SET default_transaction_read_only = ON');
+        } catch (err) {
+          console.warn('Failed to set read-only mode:', err);
+        }
+      }
+      
+      return client;
     } catch (err: any) {
       // Handle SSL Fallback
       if (this.shouldFallback(config, err)) {
@@ -61,14 +140,29 @@ export class ConnectionManager {
 
         // Remove the failed pool
         this.pools.delete(key);
-        try { await pool.end(); } catch (e) { /* ignore */ }
+        try { 
+          await pool.end(); 
+        } catch (e) { 
+          console.error(`Error closing failed SSL pool for ${key}:`, e);
+        }
 
         // Create non-SSL pool
         const clientConfig = await this.createClientConfig(config, true);
         pool = this.createPool(clientConfig, key);
         this.pools.set(key, pool);
 
-        return await pool.connect();
+        const client = await pool.connect();
+        
+        // Apply read-only mode if configured
+        if (config.readOnlyMode) {
+          try {
+            await client.query('SET default_transaction_read_only = ON');
+          } catch (err) {
+            console.warn('Failed to set read-only mode:', err);
+          }
+        }
+        
+        return client;
       }
       throw err;
     }
@@ -99,6 +193,15 @@ export class ConnectionManager {
 
     try {
       await client.connect();
+      
+      // Apply read-only mode if configured
+      if (config.readOnlyMode) {
+        try {
+          await client.query('SET default_transaction_read_only = ON');
+        } catch (err) {
+          console.warn('Failed to set read-only mode:', err);
+        }
+      }
     } catch (err: any) {
       if (this.shouldFallback(config, err)) {
         console.warn(`Session SSL connection failed for ${key}, falling back to non-SSL`, err);
@@ -107,6 +210,15 @@ export class ConnectionManager {
         const nonSSLConfig = await this.createClientConfig(config, true);
         client = new Client(nonSSLConfig);
         await client.connect();
+        
+        // Apply read-only mode if configured
+        if (config.readOnlyMode) {
+          try {
+            await client.query('SET default_transaction_read_only = ON');
+          } catch (err) {
+            console.warn('Failed to set read-only mode:', err);
+          }
+        }
       } else {
         throw err;
       }

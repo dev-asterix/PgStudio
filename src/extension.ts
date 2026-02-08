@@ -12,6 +12,7 @@ import { WhatsNewManager } from './activation/WhatsNewManager';
 import { ChatViewProvider } from './providers/ChatViewProvider';
 import { QueryHistoryService } from './services/QueryHistoryService';
 import { ConnectionUtils } from './utils/connectionUtils';
+import { ExplainProvider } from './providers/ExplainProvider';
 
 export let outputChannel: vscode.OutputChannel;
 
@@ -29,8 +30,11 @@ export async function activate(context: vscode.ExtensionContext) {
   ConnectionManager.getInstance();
   QueryHistoryService.initialize(context.workspaceState);
 
-  const { databaseTreeProvider, chatViewProviderInstance: chatView } = registerProviders(context, outputChannel);
+  const { databaseTreeProvider, treeView, chatViewProviderInstance: chatView } = registerProviders(context, outputChannel);
   chatViewProvider = chatView;
+
+  // Store tree view instance for reveal functionality
+  (databaseTreeProvider as any).setTreeView(treeView);
 
   registerAllCommands(context, databaseTreeProvider, chatView, outputChannel);
 
@@ -103,6 +107,84 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
+    if (message.type === 'showExplainPlan') {
+      ExplainProvider.show(context.extensionUri, message.plan, message.query);
+      return;
+    }
+
+    if (message.type === 'convertExplainToJson') {
+      // Convert text EXPLAIN to FORMAT JSON and show visual plan
+      const originalQuery = message.query;
+      
+      if (!originalQuery) {
+        vscode.window.showErrorMessage('No query available to convert');
+        return;
+      }
+      
+      // Extract the actual query from EXPLAIN statement
+      const explainMatch = originalQuery.match(/^\s*EXPLAIN\s*(?:\([^)]*\))?\s*(.+)$/is);
+      const innerQuery = explainMatch ? explainMatch[1].trim() : originalQuery;
+      
+      // Create new query with FORMAT JSON
+      const jsonQuery = `EXPLAIN (FORMAT JSON, ANALYZE, BUFFERS, VERBOSE)\n${innerQuery}`;
+      
+      // Execute and show plan
+      try {
+        const metadata = notebook.metadata as PostgresMetadata;
+        
+        // Get connection config from workspace settings
+        const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+        const connection = connections.find(c => c.id === metadata.connectionId);
+        
+        if (!connection) {
+          vscode.window.showErrorMessage('No active database connection');
+          return;
+        }
+
+        const password = await SecretStorageService.getInstance().getPassword(metadata.connectionId);
+        if (!password && connection.authMode === 'password') {
+          vscode.window.showErrorMessage('Password not found for connection');
+          return;
+        }
+
+        // Show progress
+        await vscode.window.withProgress({
+          location: vscode.ProgressLocation.Notification,
+          title: 'Converting EXPLAIN to JSON format...',
+          cancellable: false
+        }, async () => {
+          const { Pool } = await import('pg');
+          const client = new Pool({
+            host: connection.host,
+            port: connection.port,
+            user: connection.username,
+            password: password || undefined,
+            database: metadata.databaseName,
+            ssl: connection.ssl ? { rejectUnauthorized: false } : false
+          });
+
+          const result = await client.query(jsonQuery);
+          await client.end();
+
+          if (result.rows?.length) {
+            const planCell = result.rows[0]['QUERY PLAN'] ?? result.rows[0]['query_plan'];
+            if (planCell) {
+              const explainPlan = typeof planCell === 'string' ? JSON.parse(planCell) : planCell;
+              ExplainProvider.show(context.extensionUri, explainPlan, innerQuery);
+            } else {
+              vscode.window.showErrorMessage('No plan data returned from query');
+            }
+          } else {
+            vscode.window.showErrorMessage('No results returned from EXPLAIN query');
+          }
+        });
+      } catch (error: any) {
+        vscode.window.showErrorMessage(`Failed to convert EXPLAIN query: ${error.message}`);
+        console.error('EXPLAIN conversion error:', error);
+      }
+      return;
+    }
+
     if (message.type === 'showConnectionSwitcher') {
       const metadata = notebook.metadata as PostgresMetadata;
       const selected = await ConnectionUtils.showConnectionPicker(message.connectionId);
@@ -143,6 +225,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     if (message.type === 'execute_update_background') {
       const { statements } = message;
+      let client;
       try {
         const metadata = notebook.metadata as PostgresMetadata;
         if (!metadata?.connectionId) {
@@ -150,16 +233,20 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
 
-        const password = await SecretStorageService.getInstance().getPassword(metadata.connectionId);
-
-        const client = new Client({
+        // Use ConnectionManager to get a pooled client (handles SSL, SSH, etc.)
+        const connectionConfig = {
+          id: metadata.connectionId,
+          name: metadata.host, // fallback name
           host: metadata.host,
           port: metadata.port,
-          database: metadata.databaseName,
-          user: metadata.username,
-          password: password || metadata.password || undefined,
-        });
-        await client.connect();
+          username: metadata.username,
+          database: metadata.databaseName
+        };
+
+        client = await ConnectionManager.getInstance().getPooledClient(connectionConfig);
+
+        // No need to connect(), pooled client is already connected
+
         let successCount = 0;
         let errorCount = 0;
         for (const stmt of statements) {
@@ -172,13 +259,13 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         }
 
-        await client.end();
-
         if (successCount > 0) {
           vscode.window.showInformationMessage(`Successfully updated ${successCount} row(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
         }
       } catch (err: any) {
         await ErrorHandlers.handleCommandError(err, 'background updates');
+      } finally {
+        if (client) client.release();
       }
     } else if (message.type === 'script_delete') {
       const { schema, table, primaryKeys, rows, cellIndex } = message;
@@ -218,8 +305,9 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     } else if (message.type === 'saveChanges') {
       // Handle saveChanges from renderer
-      const { updates, tableInfo } = message;
+      const { updates, deletions, tableInfo } = message;
       const { schema, table } = tableInfo;
+      let client;
 
       try {
         const metadata = notebook.metadata as PostgresMetadata;
@@ -228,16 +316,17 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
 
-        const password = await SecretStorageService.getInstance().getPassword(metadata.connectionId);
-
-        const client = new Client({
+        // Use ConnectionManager to get a pooled client
+        const connectionConfig = {
+          id: metadata.connectionId,
+          name: metadata.host,
           host: metadata.host,
           port: metadata.port,
-          database: metadata.databaseName,
-          user: metadata.username,
-          password: password || metadata.password || undefined,
-        });
-        await client.connect();
+          username: metadata.username,
+          database: metadata.databaseName
+        };
+
+        client = await ConnectionManager.getInstance().getPooledClient(connectionConfig);
 
         let successCount = 0;
         let errorCount = 0;
@@ -284,17 +373,53 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         }
 
-        await client.end();
+        // Process DELETE queries
+        let deletedCount = 0;
+        for (const deletion of deletions || []) {
+          const { keys } = deletion;
+
+          // Build WHERE clause
+          const conditions: string[] = [];
+          for (const [pk, pkVal] of Object.entries(keys)) {
+            let pkValStr = 'NULL';
+            if (pkVal !== null && pkVal !== undefined) {
+              if (typeof pkVal === 'number' || typeof pkVal === 'boolean') {
+                pkValStr = String(pkVal);
+              } else {
+                pkValStr = `'${String(pkVal).replace(/'/g, "''")}'`;
+              }
+            }
+            conditions.push(`"${pk}" = ${pkValStr}`);
+          }
+
+          const query = `DELETE FROM "${schema}"."${table}" WHERE ${conditions.join(' AND ')}`;
+
+          try {
+            await client.query(query);
+            deletedCount++;
+            successCount++;
+          } catch (err: any) {
+            errorCount++;
+            console.error('Delete failed:', query, err);
+          }
+        }
 
         if (successCount > 0) {
-          vscode.window.showInformationMessage(`✅ Successfully saved ${successCount} change(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
-          // Notify renderer to clear modified cells
-          rendererMessaging.postMessage({ type: 'saveSuccess', successCount, errorCount });
+          const parts = [];
+          const updateCount = (updates?.length || 0);
+          if (updateCount > 0) parts.push(`${updateCount} edit(s)`);
+          if (deletedCount > 0) parts.push(`${deletedCount} deletion(s)`);
+
+          vscode.window.showInformationMessage(`✅ Successfully saved ${parts.join(', ')}${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
+          // Notify renderer to clear modified cells and remove deleted rows
+          rendererMessaging.postMessage({ type: 'saveSuccess', successCount, errorCount, deletedCount }, event.editor);
         } else if (errorCount > 0) {
           vscode.window.showErrorMessage(`Failed to save changes: ${errorCount} error(s)`);
         }
       } catch (err: any) {
         vscode.window.showErrorMessage(`Failed to save changes: ${err.message}`);
+      } finally {
+        if (client) client.release();
       }
     } else if (message.type === 'showErrorMessage') {
       vscode.window.showErrorMessage(message.message);
@@ -305,6 +430,17 @@ export async function activate(context: vscode.ExtensionContext) {
   await migrateExistingPasswords(context);
 }
 
-export function deactivate() {
-  outputChannel?.appendLine('Deactivating PgStudio extension');
+export async function deactivate() {
+  outputChannel?.appendLine('Deactivating PgStudio extension - closing all connections');
+  
+  try {
+    // Close all database connections (pools and sessions)
+    await ConnectionManager.getInstance().closeAll();
+    outputChannel?.appendLine('All database connections closed successfully');
+  } catch (err) {
+    outputChannel?.appendLine(`Error closing connections during deactivation: ${err}`);
+    console.error('Error during extension deactivation:', err);
+  }
+  
+  outputChannel?.appendLine('PgStudio extension deactivated');
 }

@@ -12,8 +12,9 @@ import { getNumericColumns, isDateColumn } from './renderer/utils/formatting';
 // Register Chart.js components
 Chart.register(...registerables);
 
-// Track chart instances per element for cleanup
+// Track renderer instances and their containers per output element for cleanup
 const chartInstances = new WeakMap<HTMLElement, ChartRenderer>();
+const tableInstances = new WeakMap<HTMLElement, TableRenderer>();
 
 export const activate: ActivationFunction = context => {
   return {
@@ -32,6 +33,7 @@ export const activate: ActivationFunction = context => {
       let currentRows: any[] = rows ? JSON.parse(JSON.stringify(rows)) : [];
       const selectedIndices = new Set<number>();
       const modifiedCells = new Map<string, { originalValue: any, newValue: any }>();
+      const rowsMarkedForDeletion = new Set<number>();
 
       // Main Container
       const mainContainer = document.createElement('div');
@@ -210,6 +212,8 @@ export const activate: ActivationFunction = context => {
 
       const selectAllBtn = createButton('Select All', true);
       const copyBtn = createButton('Copy Selected', true);
+      const deleteBtn = createButton('🗑️ Delete Selected', true);
+      deleteBtn.style.cssText = 'display: none; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); margin-left: 8px;';
 
       const exportBtn = createExportButton(columns, currentRows, tableInfo, context, query);
 
@@ -218,6 +222,7 @@ export const activate: ActivationFunction = context => {
       leftActions.style.cssText = 'display: flex; gap: 8px; align-items: center;';
       leftActions.appendChild(selectAllBtn);
       leftActions.appendChild(copyBtn);
+      leftActions.appendChild(deleteBtn);
       leftActions.appendChild(exportBtn);
 
       // Right Group
@@ -257,6 +262,43 @@ export const activate: ActivationFunction = context => {
       rightActions.appendChild(analyzeBtn);
       rightActions.appendChild(optimizeBtn);
 
+      // Detect if this is an EXPLAIN query (either JSON or text format)
+      const isExplainQuery = json.explainPlan || 
+                            (query && /^\s*EXPLAIN/i.test(query)) || 
+                            command === 'EXPLAIN' ||
+                            (columns.length === 1 && columns[0] === 'QUERY PLAN');
+      
+      if (isExplainQuery) {
+        const explainPlanBtn = createButton('🧭 View Plan', true);
+        explainPlanBtn.title = json.explainPlan 
+          ? 'Open EXPLAIN ANALYZE plan view' 
+          : 'Convert to JSON format and open visual plan view';
+        
+        explainPlanBtn.onclick = () => {
+          if (json.explainPlan) {
+            // Already have JSON plan, show it directly
+            context.postMessage?.({
+              type: 'showExplainPlan',
+              plan: json.explainPlan,
+              query: query || ''
+            });
+          } else {
+            // Text format - request re-execution with FORMAT JSON
+            // Log for debugging
+            console.log('Converting EXPLAIN to JSON, query:', query);
+            if (!query) {
+              alert('Cannot convert EXPLAIN plan: query not available');
+              return;
+            }
+            context.postMessage?.({
+              type: 'convertExplainToJson',
+              query: query
+            });
+          }
+        };
+        rightActions.appendChild(explainPlanBtn);
+      }
+
       actionsBar.appendChild(leftActions);
       actionsBar.appendChild(rightActions);
       if (!json.error) {
@@ -268,10 +310,17 @@ export const activate: ActivationFunction = context => {
       saveBtn.style.marginRight = '8px';
 
       const updateSaveButtonVisibility = () => {
-        // Logic to prepend save button to rightActions if modifiedCells > 0
-        if (modifiedCells.size > 0) {
+        // Show save button if there are edits OR deletions
+        const hasChanges = modifiedCells.size > 0 || rowsMarkedForDeletion.size > 0;
+
+        if (hasChanges) {
           if (!rightActions.contains(saveBtn)) rightActions.prepend(saveBtn);
-          saveBtn.innerText = `Save Changes (${modifiedCells.size})`;
+
+          // Build button text with counts
+          const parts = [];
+          if (modifiedCells.size > 0) parts.push(`${modifiedCells.size} edit${modifiedCells.size !== 1 ? 's' : ''}`);
+          if (rowsMarkedForDeletion.size > 0) parts.push(`${rowsMarkedForDeletion.size} deletion${rowsMarkedForDeletion.size !== 1 ? 's' : ''}`);
+          saveBtn.innerText = `💾 Save Changes (${parts.join(', ')})`;
         } else {
           if (rightActions.contains(saveBtn)) rightActions.removeChild(saveBtn);
         }
@@ -280,6 +329,7 @@ export const activate: ActivationFunction = context => {
       saveBtn.onclick = () => {
         console.log('Renderer: Save button clicked');
         console.log('Renderer: Modified cells size:', modifiedCells.size);
+        console.log('Renderer: Rows marked for deletion:', rowsMarkedForDeletion.size);
 
         const updates: any[] = [];
         modifiedCells.forEach((diff, key) => {
@@ -304,13 +354,30 @@ export const activate: ActivationFunction = context => {
           }
         });
 
-        console.log('Renderer: Updates prepared:', updates);
+        // Build deletions array
+        const deletions: any[] = [];
+        rowsMarkedForDeletion.forEach((rowIndex) => {
+          if (tableInfo?.primaryKeys) {
+            const pkValues: Record<string, any> = {};
+            tableInfo.primaryKeys.forEach((pk: string) => {
+              pkValues[pk] = originalRows[rowIndex][pk];
+            });
+            deletions.push({
+              keys: pkValues,
+              row: originalRows[rowIndex]  // Include full row for reference
+            });
+          }
+        });
 
-        if (updates.length > 0) {
+        console.log('Renderer: Updates prepared:', updates);
+        console.log('Renderer: Deletions prepared:', deletions);
+
+        if (updates.length > 0 || deletions.length > 0) {
           console.log('Renderer: Posting saveChanges message');
           context.postMessage?.({
             type: 'saveChanges',
             updates,
+            deletions,
             tableInfo
           });
         } else {
@@ -328,18 +395,32 @@ export const activate: ActivationFunction = context => {
       // Listen for messages from extension (e.g., saveSuccess)
       context.onDidReceiveMessage?.((message: any) => {
         if (message.type === 'saveSuccess') {
-          console.log('Renderer: Received saveSuccess, clearing modified cells');
-          // Update originalRows with current values
+          console.log('Renderer: Received saveSuccess, clearing modified cells and removing deleted rows');
+
+          // Remove deleted rows from arrays (in reverse order to maintain indices)
+          const deletedIndices = Array.from(rowsMarkedForDeletion).sort((a, b) => b - a);
+          deletedIndices.forEach(index => {
+            currentRows.splice(index, 1);
+            originalRows.splice(index, 1);
+          });
+
+          // Update originalRows with edited values
           modifiedCells.forEach((diff, key) => {
             const [rowIndexStr, colName] = key.split('-');
             const rowIndex = parseInt(rowIndexStr);
-            originalRows[rowIndex][colName] = diff.newValue;
+            if (rowIndex < originalRows.length) {  // Check bounds after deletions
+              originalRows[rowIndex][colName] = diff.newValue;
+            }
           });
-          // Clear modified cells
+
+          // Clear all pending changes
           modifiedCells.clear();
+          rowsMarkedForDeletion.clear();
+
           // Update save button visibility
           updateSaveButtonVisibility();
-          // Re-render table to remove yellow highlights
+
+          // Re-render table to remove highlights and deleted rows
           if (tableRenderer) {
             tableRenderer.render({
               columns,
@@ -378,6 +459,12 @@ export const activate: ActivationFunction = context => {
       // TABLE RENDERER
       const tableRenderer = new TableRenderer(viewContainer, {
         onSelectionChange: (indices) => {
+          console.log('[renderer_v2] onSelectionChange called, indices:', Array.from(indices));
+          // Sync local state with TableRenderer's state
+          selectedIndices.clear();
+          indices.forEach(i => selectedIndices.add(i));
+          console.log('[renderer_v2] local selectedIndices after sync:', selectedIndices.size);
+
           updateActionsVisibility();
         },
         onDataChange: (rowIndex, col, newVal, originalVal) => {
@@ -385,10 +472,16 @@ export const activate: ActivationFunction = context => {
           updateActionsVisibility();
         }
       });
+      
+      // Store for cleanup on disposal
+      tableInstances.set(element, tableRenderer);
 
       // CHART RENDERER
       const chartCanvas = document.createElement('canvas');
       const chartRenderer = new ChartRenderer(chartCanvas);
+      
+      // Store for cleanup on disposal
+      chartInstances.set(element, chartRenderer);
 
       const exportChartBtn = createButton('📷 Export Chart', true);
       exportChartBtn.style.display = 'none'; // Hidden by default
@@ -424,7 +517,59 @@ export const activate: ActivationFunction = context => {
         // Update Select All Button Text
         if (currentMode === 'table') {
           selectAllBtn.innerText = selectedIndices.size === currentRows.length ? 'Deselect All' : 'Select All';
+
+          if (selectedIndices.size > 0) { // Removed PK check for debugging
+            deleteBtn.style.display = 'inline-block';
+            deleteBtn.innerText = `🗑️ Delete (${selectedIndices.size})`;
+            if (!tableInfo?.primaryKeys) {
+              deleteBtn.title = 'Warning: No Primary Keys detected. Deletion may fail.';
+              deleteBtn.style.opacity = '0.7';
+            } else {
+              deleteBtn.title = 'Delete selected rows';
+              deleteBtn.style.opacity = '1';
+            }
+          } else {
+            // console.log('Renderer: Delete button hidden. Selected:', selectedIndices.size);
+            deleteBtn.style.display = 'none';
+          }
         }
+      };
+
+      deleteBtn.onclick = () => {
+        console.log('[renderer_v2] Delete button clicked!');
+        const selectedCount = selectedIndices.size;
+        console.log('[renderer_v2] selectedCount:', selectedCount);
+        if (selectedCount === 0) return;
+
+        // Mark selected rows for deletion
+        selectedIndices.forEach(index => {
+          rowsMarkedForDeletion.add(index);
+        });
+
+        console.log('[renderer_v2] Rows marked for deletion:', Array.from(rowsMarkedForDeletion));
+
+        // Clear selection
+        selectedIndices.clear();
+
+        // Update save button visibility
+        updateSaveButtonVisibility();
+
+        // Re-render table to show strikethrough on marked rows
+        if (tableRenderer) {
+          tableRenderer.render({
+            columns,
+            rows: currentRows,
+            originalRows,
+            columnTypes,
+            tableInfo,
+            initialSelectedIndices: selectedIndices,
+            modifiedCells,
+            rowsMarkedForDeletion  // Pass to renderer for styling
+          });
+        }
+
+        // Update actions visibility
+        updateActionsVisibility();
       };
 
       selectAllBtn.onclick = () => {
@@ -526,9 +671,6 @@ export const activate: ActivationFunction = context => {
       }
 
       element.appendChild(mainContainer);
-    },
-    disposeOutputItem(id) {
-      // Cleanup logic could go here
     }
   };
 };

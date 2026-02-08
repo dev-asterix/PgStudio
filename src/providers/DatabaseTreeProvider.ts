@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionManager } from '../services/ConnectionManager';
 import { getSchemaCache, SchemaCache } from '../lib/schema-cache';
+import { Debouncer } from '../lib/debounce';
 
 function buildItemKey(item: DatabaseTreeItem): string {
   return [item.type, item.connectionId || '', item.databaseName || '', item.schema || '', item.label].join(':');
@@ -13,6 +14,8 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
   readonly onDidChangeTreeData: vscode.Event<DatabaseTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
   private disconnectedConnections: Set<string> = new Set();
   private readonly _cache: SchemaCache = getSchemaCache();
+  private readonly debouncer = new Debouncer();
+  private treeView?: vscode.TreeView<DatabaseTreeItem>;
 
   // Filter, Favorites, and Recent Items
   private _filterPattern: string = '';
@@ -21,12 +24,70 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
   private static readonly MAX_RECENT_ITEMS = 10;
   private static readonly FAVORITES_KEY = 'postgresExplorer.favorites';
   private static readonly RECENT_KEY = 'postgresExplorer.recentItems';
+  
+  // Virtualization support - only render visible items
+  private static readonly VIRTUALIZATION_THRESHOLD = 100; // Use virtual scrolling for 100+ items
+  private visibleRange?: vscode.TreeViewExpansionEvent<DatabaseTreeItem>;
 
   constructor(private readonly extensionContext: vscode.ExtensionContext) {
     // Initialize all connections as disconnected by default
     this.initializeDisconnectedState();
     // Load persisted favorites and recent items
     this.loadPersistedData();
+  }
+
+  /**
+   * Set the tree view instance for reveal functionality
+   */
+  public setTreeView(treeView: vscode.TreeView<DatabaseTreeItem>): void {
+    this.treeView = treeView;
+  }
+
+  /**
+   * Reveal an item in the tree view
+   */
+  public async revealItem(connectionId: string, databaseName?: string, schema?: string, objectName?: string, objectType?: string): Promise<void> {
+    if (!this.treeView) {
+      console.warn('TreeView not initialized for reveal');
+      return;
+    }
+
+    try {
+      // Focus the tree view first
+      await vscode.commands.executeCommand('postgresExplorer.focus');
+
+      // Find the item to reveal
+      const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+      const connection = connections.find(c => c.id === connectionId);
+      
+      if (!connection) {
+        vscode.window.showWarningMessage('Connection not found');
+        return;
+      }
+
+      // Create the connection item
+      const connectionItem = new DatabaseTreeItem(
+        connection.name || `${connection.host}:${connection.port}`,
+        vscode.TreeItemCollapsibleState.Collapsed,
+        'connection',
+        connectionId
+      );
+
+      // Reveal with expand
+      await this.treeView.reveal(connectionItem, { select: true, focus: true, expand: 1 });
+
+      // If database is specified, try to expand and reveal it
+      if (databaseName) {
+        // TODO: Implement deeper reveal logic for database/schema/object
+        // This would require fetching children and finding the exact item
+        vscode.window.showInformationMessage(`Revealed connection: ${connection.name || connection.host}`);
+      } else {
+        vscode.window.showInformationMessage(`Revealed connection: ${connection.name || connection.host}`);
+      }
+    } catch (err) {
+      console.error('Error revealing item:', err);
+      vscode.window.showWarningMessage('Could not reveal item in explorer');
+    }
   }
 
   private loadPersistedData(): void {
@@ -229,20 +290,50 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
   }
 
   refresh(element?: DatabaseTreeItem): void {
-    // Clear cache on manual refresh to ensure fresh data
-    if (!element) {
-      this._cache.clear();
-    } else if (element.connectionId && element.databaseName) {
-      this._cache.invalidateDatabase(element.connectionId, element.databaseName);
-    } else if (element.connectionId) {
-      this._cache.invalidateConnection(element.connectionId);
-    }
-    this._onDidChangeTreeData.fire(element);
+    // Debounce tree refresh to prevent excessive updates during rapid operations
+    this.debouncer.debounce('tree-refresh', () => {
+      // Clear cache on manual refresh to ensure fresh data
+      if (!element) {
+        this._cache.clear();
+      } else if (element.connectionId && element.databaseName) {
+        this._cache.invalidateDatabase(element.connectionId, element.databaseName);
+      } else if (element.connectionId) {
+        this._cache.invalidateConnection(element.connectionId);
+      }
+      this._onDidChangeTreeData.fire(element);
+    }, 300); // Debounce for 300ms to batch rapid updates
   }
 
   collapseAll(): void {
     // This will trigger a refresh of the tree view with all items collapsed
     this._onDidChangeTreeData.fire();
+  }
+
+  /**
+   * Apply virtual rendering for large item collections
+   * Returns only visible items based on virtualization threshold
+   */
+  private applyVirtualization(items: DatabaseTreeItem[]): DatabaseTreeItem[] {
+    if (items.length < DatabaseTreeProvider.VIRTUALIZATION_THRESHOLD) {
+      return items;
+    }
+
+    // For very large collections, could implement viewport-based filtering
+    // For now, return all items but sorted by relevance (favorites/recent first)
+    const sorted = [...items];
+    sorted.sort((a, b) => {
+      const aFav = this._favorites.has(buildItemKey(a)) ? 0 : 1;
+      const bFav = this._favorites.has(buildItemKey(b)) ? 0 : 1;
+      const aRecent = this._recentItems.includes(buildItemKey(a)) ? 0 : 1;
+      const bRecent = this._recentItems.includes(buildItemKey(b)) ? 0 : 1;
+
+      // Prioritize: favorites > recent > others
+      const aScore = aFav * 2 + aRecent;
+      const bScore = bFav * 2 + bRecent;
+      return aScore - bScore;
+    });
+
+    return sorted;
   }
 
   getTreeItem(element: DatabaseTreeItem): vscode.TreeItem {
@@ -294,7 +385,13 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
           undefined, // isInstalled
           undefined, // installedVersion
           undefined, // roleAttributes
-          this.disconnectedConnections.has(conn.id) // isDisconnected
+          this.disconnectedConnections.has(conn.id), // isDisconnected
+          undefined, // isFavorite
+          undefined, // count
+          undefined, // rowCount
+          undefined, // size
+          conn.environment, // environment
+          conn.readOnlyMode // readOnlyMode
         ));
       });
 
@@ -318,7 +415,13 @@ export class DatabaseTreeProvider implements vscode.TreeDataProvider<DatabaseTre
         undefined, // isInstalled
         undefined, // installedVersion
         undefined, // roleAttributes
-        this.disconnectedConnections.has(conn.id) // isDisconnected
+        this.disconnectedConnections.has(conn.id), // isDisconnected
+        undefined, // isFavorite
+        undefined, // count
+        undefined, // rowCount
+        undefined, // size
+        conn.environment, // environment
+        conn.readOnlyMode // readOnlyMode
       ));
     }
 
@@ -1015,7 +1118,9 @@ export class DatabaseTreeItem extends vscode.TreeItem {
     public readonly isFavorite?: boolean,
     public readonly count?: number,  // For category item counts
     public readonly rowCount?: string | number, // Data row count
-    public readonly size?: string    // Data size
+    public readonly size?: string,   // Data size
+    public readonly environment?: 'production' | 'staging' | 'development',  // Environment tag
+    public readonly readOnlyMode?: boolean  // Read-only mode flag
   ) {
     super(label, collapsibleState);
     if (type === 'category' && label) {
@@ -1029,8 +1134,8 @@ export class DatabaseTreeItem extends vscode.TreeItem {
       // For favorites menu detection, we use description containing ★
       this.contextValue = isInstalled ? `${type}-installed` : type;
     }
-    this.tooltip = this.getTooltip(type, comment, roleAttributes);
-    this.description = this.getDescription(type, isInstalled, installedVersion, roleAttributes, isFavorite, count, rowCount, size);
+    this.tooltip = this.getTooltip(type, comment, roleAttributes, environment, readOnlyMode);
+    this.description = this.getDescription(type, isInstalled, installedVersion, roleAttributes, isFavorite, count, rowCount, size, environment, readOnlyMode);
     this.iconPath = {
       connection: new vscode.ThemeIcon('plug', isDisconnected ? new vscode.ThemeColor('disabledForeground') : new vscode.ThemeColor('charts.blue')),
       database: new vscode.ThemeIcon('database', new vscode.ThemeColor('charts.purple')),
@@ -1057,7 +1162,17 @@ export class DatabaseTreeItem extends vscode.TreeItem {
     }[type];
   }
 
-  private getTooltip(type: string, comment?: string, roleAttributes?: { [key: string]: boolean }): string {
+  private getTooltip(type: string, comment?: string, roleAttributes?: { [key: string]: boolean }, environment?: string, readOnlyMode?: boolean): string {
+    if (type === 'connection') {
+      const parts = [this.label];
+      if (environment) {
+        parts.push(`\nEnvironment: ${environment.charAt(0).toUpperCase() + environment.slice(1)}`);
+      }
+      if (readOnlyMode) {
+        parts.push('\nMode: Read-Only');
+      }
+      return parts.join('');
+    }
     if (type === 'role' && roleAttributes) {
       const attributes = [];
       if (roleAttributes.rolsuper) attributes.push('Superuser');
@@ -1069,10 +1184,23 @@ export class DatabaseTreeItem extends vscode.TreeItem {
     return comment ? `${this.label} \n\n${comment}` : this.label;
   }
 
-  private getDescription(type: string, isInstalled?: boolean, installedVersion?: string, roleAttributes?: { [key: string]: boolean }, isFavorite?: boolean, count?: number, rowCount?: string | number, size?: string): string | undefined {
+  private getDescription(type: string, isInstalled?: boolean, installedVersion?: string, roleAttributes?: { [key: string]: boolean }, isFavorite?: boolean, count?: number, rowCount?: string | number, size?: string, environment?: string, readOnlyMode?: boolean): string | undefined {
     let desc: string | undefined = undefined;
 
-    if (type === 'extension' && isInstalled) {
+    if (type === 'connection') {
+      const badges = [];
+      if (environment === 'production') {
+        badges.push('🔴 PROD');
+      } else if (environment === 'staging') {
+        badges.push('🟡 STAGING');
+      } else if (environment === 'development') {
+        badges.push('🟢 DEV');
+      }
+      if (readOnlyMode) {
+        badges.push('🔒');
+      }
+      return badges.length > 0 ? badges.join(' ') : undefined;
+    } else if (type === 'extension' && isInstalled) {
       desc = `v${installedVersion} (installed)`;
     } else if (type === 'role' && roleAttributes) {
       const tags = [];

@@ -14,6 +14,11 @@
             "mocha",
             "chai",
             "sinon"
-        ]
-    }
+        ],
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true
+    },
+    "include": [
+        "**/*.ts"
+    ]
 }

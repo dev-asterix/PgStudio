@@ -1,9 +1,9 @@
-.PHONY: all clean install build package publish publish-ovsx publish-vsx git-tag
+.PHONY: all clean install build package publish publish-ovsx publish-vsx git-tag test test-unit test-integration test-renderer test-all coverage docker-up docker-down
 
 # Variables
 NODE_BIN := node
 NPM_BIN := npm
-VSCE_CMD := npx -y @vscode/vsce
+VSCE_CMD := npx -y @vscode/vsce@2.24.0
 OVSX_CMD := npx -y ovsx
 
 # Get version and name from package.json using node
@@ -66,6 +66,49 @@ publish-ovsx: package
 watch:
 	$(NPM_BIN) run watch
 
+# Testing targets
+test:
+	$(NPM_BIN) run test
+
+test-unit:
+	$(NPM_BIN) run test:unit
+
+test-integration:
+	$(NPM_BIN) run test:integration
+
+test-renderer:
+	$(NPM_BIN) run test:renderer
+
+test-all:
+	$(NPM_BIN) run test:all
+
+coverage:
+	$(NPM_BIN) run coverage
+
+coverage-report:
+	$(NPM_BIN) run coverage:report
+	@echo "Coverage report generated in ./coverage/index.html"
+
+# Docker testing targets
+docker-up:
+	docker-compose -f docker-compose.test.yml up -d
+	@echo "PostgreSQL test containers started"
+	@echo "Versions available on ports: 12(5412), 14(5414), 15(5415), 16(5416), 17(5417)"
+
+docker-down:
+	docker-compose -f docker-compose.test.yml down
+
+docker-logs:
+	docker-compose -f docker-compose.test.yml logs -f
+
+docker-clean:
+	docker-compose -f docker-compose.test.yml down -v
+	@echo "Test containers and volumes removed"
+
+# Full test suite
+test-full: docker-up test-all coverage docker-down
+	@echo "Full test suite completed"
+
 # Git tag and version bump (interactive)
 git-tag:
 	@echo "Current version: $(EXTENSION_VERSION)"
@@ -85,12 +128,28 @@ git-tag:
 # Help target
 help:
 	@echo "Available targets:"
-	@echo "  all          : Clean, install, build, and package"
-	@echo "  clean        : Remove build artifacts"
-	@echo "  install      : Install dependencies"
-	@echo "  build        : Build the extension"
-	@echo "  package      : Create VSIX package"
-	@echo "  publish      : Publish to BOTH VS Code Marketplace and Open VSX"
-	@echo "  publish-vsx  : Publish to VS Code Marketplace only"
-	@echo "  publish-ovsx : Publish to Open VSX Registry only"
-	@echo "  git-tag      : Interactive version bump, commit, tag, and push"
+	@echo "  all             : Clean, install, build, and package"
+	@echo "  clean           : Remove build artifacts"
+	@echo "  install         : Install dependencies"
+	@echo "  build           : Build the extension"
+	@echo "  package         : Create VSIX package"
+	@echo "  publish         : Publish to BOTH VS Code Marketplace and Open VSX"
+	@echo "  publish-vsx     : Publish to VS Code Marketplace only"
+	@echo "  publish-ovsx    : Publish to Open VSX Registry only"
+	@echo "  git-tag         : Interactive version bump, commit, tag, and push"
+	@echo ""
+	@echo "Testing targets:"
+	@echo "  test            : Run unit tests"
+	@echo "  test-unit       : Run unit tests only"
+	@echo "  test-integration: Run integration tests"
+	@echo "  test-renderer   : Run renderer component tests"
+	@echo "  test-all        : Run all tests"
+	@echo "  coverage        : Generate coverage report"
+	@echo "  coverage-report : Generate HTML coverage report"
+	@echo ""
+	@echo "Docker testing targets:"
+	@echo "  docker-up       : Start PostgreSQL test containers (12-17)"
+	@echo "  docker-down     : Stop and remove test containers"
+	@echo "  docker-logs     : View container logs"
+	@echo "  docker-clean    : Remove containers and volumes"
+	@echo "  test-full       : Run full test suite with Docker (docker-up → test-all → docker-down)"

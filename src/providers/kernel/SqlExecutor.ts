@@ -7,16 +7,54 @@ import { SqlParser } from './SqlParser';
 import { SecretStorageService } from '../../services/SecretStorageService';
 import { ErrorService } from '../../services/ErrorService';
 import { QueryHistoryService } from '../../services/QueryHistoryService';
+import { getTransactionManager } from '../../services/TransactionManager';
+import { QueryAnalyzer } from '../../services/QueryAnalyzer';
 
 export class SqlExecutor {
   constructor(private readonly _controller: vscode.NotebookController) { }
+
+  /**
+   * Apply auto-LIMIT to SELECT queries that don't already have one
+   */
+  private applyAutoLimit(query: string, connection: any): string {
+    // Check if auto-limit is enabled
+    const autoLimitEnabled = vscode.workspace.getConfiguration()
+      .get<boolean>('postgresExplorer.query.autoLimitEnabled', true);
+    
+    if (!autoLimitEnabled && !connection.readOnlyMode) {
+      return query;
+    }
+
+    // Get default limit
+    const defaultLimit = vscode.workspace.getConfiguration()
+      .get<number>('postgresExplorer.performance.defaultLimit', 1000);
+
+    // Only apply to SELECT queries
+    const trimmed = query.trim();
+    if (!/^\s*SELECT/i.test(trimmed)) {
+      return query;
+    }
+
+    // Check if query already has LIMIT
+    if (/\bLIMIT\s+\d+/i.test(query)) {
+      return query;
+    }
+
+    // Check for semicolon at end
+    const hasSemicolon = trimmed.endsWith(';');
+    const baseQuery = hasSemicolon ? trimmed.slice(0, -1) : trimmed;
+
+    // Apply LIMIT
+    const limitedQuery = `${baseQuery} LIMIT ${defaultLimit}${hasSemicolon ? ';' : ''}`;
+    return limitedQuery;
+  }
 
   public async executeCell(cell: vscode.NotebookCell) {
     console.log(`SqlExecutor: Starting cell execution. Controller ID: ${this._controller.id}`);
     const execution = this._controller.createNotebookCellExecution(cell);
     const startTime = Date.now();
     execution.start(startTime);
-    execution.clearOutput();
+    await execution.clearOutput();
 
     try {
       const metadata = cell.notebook.metadata as PostgresMetadata;
@@ -65,10 +103,52 @@ export class SqlExecutor {
 
       console.log('SqlExecutor: Executing', statements.length, 'statement(s)');
 
+      // Safety check: Analyze queries for dangerous operations
+      const queryAnalyzer = QueryAnalyzer.getInstance();
+      for (const stmt of statements) {
+        // Check read-only mode
+        if (connection.readOnlyMode && !queryAnalyzer.isReadOnlyQuery(stmt)) {
+          throw new Error('Write operations are not allowed in read-only mode');
+        }
+
+        // Analyze for dangerous operations
+        const analysis = queryAnalyzer.analyzeQuery(stmt, connection);
+        if (analysis.requiresConfirmation && analysis.warningMessage) {
+          const action = await vscode.window.showWarningMessage(
+            analysis.warningMessage,
+            { modal: true },
+            'Execute',
+            'Execute in Transaction'
+          );
+
+          if (!action) {
+            throw new Error('Query execution cancelled by user');
+          } else if (action === 'Execute in Transaction') {
+            // Wrap in transaction if not already in one
+            const txManager = getTransactionManager();
+            const sessionId = cell.notebook.uri.toString();
+            const txInfo = txManager.getTransactionInfo(sessionId);
+            
+            if (!txInfo || !txInfo.isActive) {
+              await client.query('BEGIN');
+              if (!txInfo) {
+                txManager.initializeSession(sessionId, true);
+              }
+              notices.push('Transaction started automatically for safety. Run COMMIT or ROLLBACK when done.');
+            }
+          }
+        }
+      }
+
       // Execute each statement
       for (let stmtIndex = 0; stmtIndex < statements.length; stmtIndex++) {
-        const query = statements[stmtIndex];
+        let query = statements[stmtIndex];
         const stmtStartTime = Date.now();
+
+        // Apply auto-LIMIT if applicable
+        const originalQuery = query;
+        query = this.applyAutoLimit(query, connection);
+        const autoLimitApplied = query !== originalQuery;
 
         console.log(`SqlExecutor: Executing statement ${stmtIndex + 1}/${statements.length}:`, query.substring(0, 100));
 
@@ -84,7 +164,30 @@ export class SqlExecutor {
           const stmtEndTime = Date.now();
           const executionTime = (stmtEndTime - stmtStartTime) / 1000;
 
+          // Add notice if auto-LIMIT was applied
+          if (autoLimitApplied) {
+            const defaultLimit = vscode.workspace.getConfiguration()
+              .get<number>('postgresExplorer.performance.defaultLimit', 1000);
+            notices.push(`ℹ️ Auto-LIMIT applied: Result set limited to ${defaultLimit} rows`);
+          }
+
           const success = true;
+          const slowThresholdMs = vscode.workspace.getConfiguration().get<number>('postgresExplorer.performance.slowQueryThresholdMs', 2000);
+          const durationMs = executionTime * 1000;
+          const isSlow = durationMs >= slowThresholdMs;
+
+          // Extract EXPLAIN (FORMAT JSON) plan if available
+          let explainPlan: any | undefined;
+          if (result.command === 'EXPLAIN' && result.rows?.length) {
+            const planCell = result.rows[0]['QUERY PLAN'] ?? result.rows[0]['query_plan'];
+            if (planCell) {
+              try {
+                explainPlan = typeof planCell === 'string' ? JSON.parse(planCell) : planCell;
+              } catch {
+                explainPlan = planCell;
+              }
+            }
+          }
 
           // Build output data
           const tableInfo = await this.getTableInfo(client, result, query);
@@ -104,6 +207,8 @@ export class SqlExecutor {
             executionTime,
             backendPid,
             tableInfo,
+            explainPlan,
+            slowQuery: isSlow,
             breadcrumb: {
               connectionId: connection.id,
               connectionName: connection.name || connection.host,
@@ -118,7 +223,7 @@ export class SqlExecutor {
           // Clear notices for next statement
           notices.length = 0;
 
-          execution.appendOutput(new vscode.NotebookCellOutput([
+          await execution.appendOutput(new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.json(outputData, 'application/vnd.postgres-notebook.result')
           ]));
 
@@ -127,6 +232,8 @@ export class SqlExecutor {
             query: query,
             success: true,
             duration: executionTime,
+            durationMs,
+            slow: isSlow,
             rowCount: result.rowCount || 0,
             connectionName: connection.name
           });
@@ -137,17 +244,29 @@ export class SqlExecutor {
 
           console.error('SqlExecutor: Query error:', err);
 
-          // Attempt to get error explanation from AI (placeholder logic implies client-side AI or just error display)
+          // Handle transaction auto-rollback on error
+          const sessionId = cell.notebook.uri.toString();
+          const txManager = getTransactionManager();
+          try {
+            await txManager.handleCellError(client, sessionId, err);
+          } catch (txErr) {
+            console.error('SqlExecutor: Transaction error handling failed:', txErr);
+          }
+
+          const slowThresholdMs = vscode.workspace.getConfiguration().get<number>('postgresExplorer.performance.slowQueryThresholdMs', 2000);
+          const durationMs = executionTime * 1000;
+          const isSlow = durationMs >= slowThresholdMs;
 
           const errorData = {
             success: false,
             error: err.message,
             query: query,
             executionTime,
+            slowQuery: isSlow,
             canExplain: true
           };
 
-          execution.appendOutput(new vscode.NotebookCellOutput([
+          await execution.appendOutput(new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.json(errorData, 'application/vnd.postgres-notebook.error')
           ]));
 
@@ -156,6 +275,8 @@ export class SqlExecutor {
             query: query,
             success: false,
             duration: executionTime,
+            durationMs,
+            slow: isSlow,
             connectionName: connection.name
           });
 
@@ -169,7 +290,7 @@ export class SqlExecutor {
 
     } catch (err: any) {
       console.error('SqlExecutor: Execution failed:', err);
-      execution.replaceOutput(new vscode.NotebookCellOutput([
+      await execution.replaceOutput(new vscode.NotebookCellOutput([
         vscode.NotebookCellOutputItem.error(err)
       ]));
       execution.end(false, Date.now());

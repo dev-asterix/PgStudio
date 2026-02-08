@@ -54,3 +54,4 @@ coverage/**
 docs/**
 .nycrc
 index.js
+venv/**

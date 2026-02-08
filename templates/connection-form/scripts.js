@@ -52,6 +52,14 @@ if (connectionData) {
     document.getElementById('options').value = connectionData.options;
   }
 
+  // Populate safety options
+  if (connectionData.environment) {
+    document.getElementById('environment').value = connectionData.environment;
+  }
+  if (connectionData.readOnlyMode) {
+    document.getElementById('readOnlyMode').checked = connectionData.readOnlyMode;
+  }
+
   // Show advanced section if any advanced options are set
   const hasAdvancedOptions = connectionData.sslmode || connectionData.statementTimeout ||
     connectionData.connectTimeout || connectionData.applicationName || connectionData.options;
@@ -174,6 +182,9 @@ function getFormData() {
     group: document.getElementById('group').value || undefined,
     username: usernameInput || undefined,
     password: passwordInput || undefined,
+    // Safety options
+    environment: document.getElementById('environment').value || undefined,
+    readOnlyMode: document.getElementById('readOnlyMode').checked || undefined,
     // Advanced options
     sslmode: document.getElementById('sslmode').value || undefined,
     sslCertPath: document.getElementById('sslCertPath').value || undefined,
