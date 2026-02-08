@@ -109,6 +109,79 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
+    if (message.type === 'convertExplainToJson') {
+      // Convert text EXPLAIN to FORMAT JSON and show visual plan
+      const originalQuery = message.query;
+      
+      if (!originalQuery) {
+        vscode.window.showErrorMessage('No query available to convert');
+        return;
+      }
+      
+      // Extract the actual query from EXPLAIN statement
+      const explainMatch = originalQuery.match(/^\s*EXPLAIN\s*(?:\([^)]*\))?\s*(.+)$/is);
+      const innerQuery = explainMatch ? explainMatch[1].trim() : originalQuery;
+      
+      // Create new query with FORMAT JSON
+      const jsonQuery = `EXPLAIN (FORMAT JSON, ANALYZE, BUFFERS, VERBOSE)\n${innerQuery}`;
+      
+      // Execute and show plan
+      try {
+        const metadata = notebook.metadata as PostgresMetadata;
+        
+        // Get connection config from workspace settings
+        const connections = vscode.workspace.getConfiguration().get<any[]>('postgresExplorer.connections') || [];
+        const connection = connections.find(c => c.id === metadata.connectionId);
+        
+        if (!connection) {
+          vscode.window.showErrorMessage('No active database connection');
+          return;
+        }
+
+        const password = await SecretStorageService.getInstance().getPassword(metadata.connectionId);
+        if (!password && connection.authMode === 'password') {
+          vscode.window.showErrorMessage('Password not found for connection');
+          return;
+        }
+
+        // Show progress
+        await vscode.window.withProgress({
+          location: vscode.ProgressLocation.Notification,
+          title: 'Converting EXPLAIN to JSON format...',
+          cancellable: false
+        }, async () => {
+          const { Pool } = await import('pg');
+          const client = new Pool({
+            host: connection.host,
+            port: connection.port,
+            user: connection.username,
+            password: password || undefined,
+            database: metadata.databaseName,
+            ssl: connection.ssl ? { rejectUnauthorized: false } : false
+          });
+
+          const result = await client.query(jsonQuery);
+          await client.end();
+
+          if (result.rows?.length) {
+            const planCell = result.rows[0]['QUERY PLAN'] ?? result.rows[0]['query_plan'];
+            if (planCell) {
+              const explainPlan = typeof planCell === 'string' ? JSON.parse(planCell) : planCell;
+              ExplainProvider.show(context.extensionUri, explainPlan, innerQuery);
+            } else {
+              vscode.window.showErrorMessage('No plan data returned from query');
+            }
+          } else {
+            vscode.window.showErrorMessage('No results returned from EXPLAIN query');
+          }
+        });
+      } catch (error: any) {
+        vscode.window.showErrorMessage(`Failed to convert EXPLAIN query: ${error.message}`);
+        console.error('EXPLAIN conversion error:', error);
+      }
+      return;
+    }
+
     if (message.type === 'showConnectionSwitcher') {
       const metadata = notebook.metadata as PostgresMetadata;
       const selected = await ConnectionUtils.showConnectionPicker(message.connectionId);

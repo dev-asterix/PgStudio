@@ -262,15 +262,39 @@ export const activate: ActivationFunction = context => {
       rightActions.appendChild(analyzeBtn);
       rightActions.appendChild(optimizeBtn);
 
-      if (json.explainPlan) {
+      // Detect if this is an EXPLAIN query (either JSON or text format)
+      const isExplainQuery = json.explainPlan || 
+                            (query && /^\s*EXPLAIN/i.test(query)) || 
+                            command === 'EXPLAIN' ||
+                            (columns.length === 1 && columns[0] === 'QUERY PLAN');
+      
+      if (isExplainQuery) {
         const explainPlanBtn = createButton('🧭 View Plan', true);
-        explainPlanBtn.title = 'Open EXPLAIN ANALYZE plan view';
+        explainPlanBtn.title = json.explainPlan 
+          ? 'Open EXPLAIN ANALYZE plan view' 
+          : 'Convert to JSON format and open visual plan view';
+        
         explainPlanBtn.onclick = () => {
-          context.postMessage?.({
-            type: 'showExplainPlan',
-            plan: json.explainPlan,
-            query: query || ''
-          });
+          if (json.explainPlan) {
+            // Already have JSON plan, show it directly
+            context.postMessage?.({
+              type: 'showExplainPlan',
+              plan: json.explainPlan,
+              query: query || ''
+            });
+          } else {
+            // Text format - request re-execution with FORMAT JSON
+            // Log for debugging
+            console.log('Converting EXPLAIN to JSON, query:', query);
+            if (!query) {
+              alert('Cannot convert EXPLAIN plan: query not available');
+              return;
+            }
+            context.postMessage?.({
+              type: 'convertExplainToJson',
+              query: query
+            });
+          }
         };
         rightActions.appendChild(explainPlanBtn);
       }

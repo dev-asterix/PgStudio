@@ -3,7 +3,7 @@
 # Variables
 NODE_BIN := node
 NPM_BIN := npm
-VSCE_CMD := npx -y @vscode/vsce
+VSCE_CMD := npx -y @vscode/vsce@2.24.0
 OVSX_CMD := npx -y ovsx
 
 # Get version and name from package.json using node
