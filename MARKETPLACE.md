@@ -33,10 +33,14 @@
 | Feature | Description |
 |---------|-------------|
 | 🔌 **Secure Connections** | Manage multiple connections with VS Code SecretStorage encryption |
+| 🛡️ **Connection Safety** | Environment tagging (🔴 PROD, 🟡 STAGING, 🟢 DEV), read-only mode, query safety analyzer |
 | 📊 **Live Dashboard** | Real-time metrics, active query monitoring, and performance graphs |
 | 📓 **SQL Notebooks** | Interactive notebooks with rich output, AI assistance, and export options |
 | 🌳 **Database Explorer** | Browse tables, views, functions, types, extensions, roles, and FDWs |
 | 🛠️ **Object Operations** | Full CRUD operations, scripts, VACUUM, ANALYZE, REINDEX |
+| 📊 **Table Intelligence** | Profile, activity monitor, index usage analytics, definition viewer |
+| 🔍 **EXPLAIN CodeLens** | One-click EXPLAIN/ANALYZE with results in notebooks |
+| 🛡️ **Auto-LIMIT** | Automatic query protection with configurable row limits (default 1000) |
 | 🌍 **Foreign Data Wrappers** | Manage foreign servers, user mappings, and tables |
 | 🤖 **AI-Powered** | GitHub Copilot, OpenAI, Anthropic, and Google Gemini integration |
 | ⌨️ **Developer Tools** | IntelliSense, keyboard shortcuts, PSQL terminal access |
@@ -72,11 +76,24 @@
 
 ### 🔐 Secure & Reliable
 - VS Code SecretStorage for credentials
-- Safe connection management
+- Environment tagging & read-only mode
+- Query safety analyzer with risk scoring
+- Auto-LIMIT protection
 - Transaction support
-- Data integrity protection
 
 </td>
+<td>
+
+### 📊 Performance Intelligence
+- Table profiling with size breakdown
+- Real-time activity monitoring
+- Index usage analytics
+- Bloat detection & warnings
+- EXPLAIN CodeLens for optimization
+
+</td>
+</tr>
+<tr>
 <td>
 
 ### 🚀 Developer Friendly

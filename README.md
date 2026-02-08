@@ -36,10 +36,14 @@
 ## ✨ Key Features
 
 - 🔌 **Secure Connections** — VS Code SecretStorage encryption
+- 🛡️ **Connection Safety** — Environment tagging (🔴 PROD, 🟡 STAGING, 🟢 DEV), read-only mode, query safety analyzer
 - 📊 **Live Dashboard** — Real-time metrics & query monitoring
 - 📓 **SQL Notebooks** — Interactive notebooks with AI assistance
 - 🌳 **Database Explorer** — Browse tables, views, functions, types, FDWs
 - 🛠️ **Object Operations** — CRUD, scripts, VACUUM, ANALYZE, REINDEX
+- 📊 **Table Intelligence** — Profile, activity monitor, index usage, definition viewer
+- 🔍 **EXPLAIN CodeLens** — One-click query analysis directly in notebooks
+- 🛡️ **Auto-LIMIT** — Intelligent query protection (configurable, default 1000 rows)
 - 🌍 **Foreign Data Wrappers** — Manage foreign servers, user mappings & tables
 - 🤖 **AI-Powered** — Generate, Optimize, Explain & Analyze (OpenAI, Anthropic, Gemini)
 - 📤 **Export Data** — Export results to CSV, JSON, or Excel
@@ -64,8 +68,31 @@
 ### ⚡ Powerful Features
 - Interactive SQL notebooks
 - 🤖 AI-powered Copilot & agentic support
-- Advanced query management
+- Table intelligence & performance insights
 - Complete CRUD operations
+- EXPLAIN CodeLens for query analysis
+
+</td>
+</tr>
+<tr>
+<td>
+
+### 🛡️ Production-Ready Safety
+- Environment tagging (Production/Staging/Dev)
+- Read-only mode enforcement
+- Query safety analyzer with risk scoring
+- Auto-LIMIT for SELECT queries
+- Status bar risk indicators
+
+</td>
+<td>
+
+### 📊 Performance Insights
+- Table profile with size & statistics
+- Real-time activity monitoring
+- Index usage analytics
+- Bloat detection & warnings
+- Complete table definitions
 
 </td>
 </tr>

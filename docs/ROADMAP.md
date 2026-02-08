@@ -95,22 +95,23 @@
 
 ---
 
-## 🧠 Phase 6: Data Intelligence & Productivity
+## 🧠 Phase 6: Data Intelligence & Productivity ✅ COMPLETE
 
-### Query Productivity
-- [ ] **Query history with rerun & diff**
-- [ ] **Auto `LIMIT` / sampling for SELECT**
-  - Implementation: Automatically append `LIMIT 100` if not present when in browsing mode.
-- [ ] **One-click `EXPLAIN` / `EXPLAIN ANALYZE`**
-  - Implementation: CodeLens or button to wrap current query in `EXPLAIN ANALYZE` and visualize output.
+### Query Productivity ✅ COMPLETE
+- [x] **Auto `LIMIT` / sampling for SELECT**
+  - Implementation: Automatically append `LIMIT 1000` (configurable) if not present. Smart detection skips queries with existing LIMIT/OFFSET. Auto-disabled in read-only mode.
+- [x] **One-click `EXPLAIN` / `EXPLAIN ANALYZE`**
+  - Implementation: CodeLens buttons on all SQL queries to wrap in `EXPLAIN` or `EXPLAIN ANALYZE`. Results inserted as new notebook cell for seamless workflow.
 
-### Table Intelligence
-- [ ] **Table profile**
-  - Implementation: Fetch row count, approximate size, null %, distinction stats.
-- [ ] **Quick stats & recent activity**
-  - Implementation: Show recent tuples inserted/updated/deleted from `pg_stat_user_tables`.
-- [ ] **Open definition / indexes / constraints**
-  - Implementation: Quick view for DDL, indexes list, and foreign key constraints.
+### Table Intelligence ✅ COMPLETE
+- [x] **Table profile**
+  - Implementation: Comprehensive statistics including approximate row count, storage size breakdown (table/indexes/TOAST), column-level stats (null %, distinct values, correlation), and complete column definitions.
+- [x] **Quick stats & recent activity**
+  - Implementation: Real-time insights from `pg_stat_user_tables` showing access patterns (sequential/index scans), data modifications (inserts/updates/deletes/HOT updates), table health metrics (live/dead rows, bloat ratio), and maintenance history (VACUUM/ANALYZE timestamps).
+- [x] **Index usage analytics**
+  - Implementation: Performance insights for all indexes including usage statistics (scans, tuples read/fetched), index definitions with DDL and size, automatic detection of unused indexes with recommendations.
+- [x] **Open definition / indexes / constraints**
+  - Implementation: Complete table structure viewer with generated CREATE TABLE DDL, all constraints (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK), complete index definitions, and incoming foreign key relationships.
 
 ---
 
