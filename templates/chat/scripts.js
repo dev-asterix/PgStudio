@@ -1430,7 +1430,15 @@ function renderMessages(messages, animate = false) {
         messageDiv.appendChild(roleDiv);
         messageDiv.appendChild(bubbleDiv);
         messagesContainer.insertBefore(messageDiv, typingIndicator);
-        typeText(contentDiv, msg.content);
+        typeText(contentDiv, msg.content, () => {
+          if (msg.usage) {
+            const usageDiv = document.createElement('div');
+            usageDiv.className = 'message-usage';
+            usageDiv.textContent = msg.usage;
+            messageDiv.appendChild(usageDiv);
+            messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
+          }
+        });
         return; // Skip the normal append below
       } else {
         contentDiv.innerHTML = parseMarkdown(msg.content);
@@ -1442,6 +1450,15 @@ function renderMessages(messages, animate = false) {
     bubbleDiv.appendChild(contentDiv);
     messageDiv.appendChild(roleDiv);
     messageDiv.appendChild(bubbleDiv);
+
+    // Append usage info if available
+    if (msg.usage) {
+      const usageDiv = document.createElement('div');
+      usageDiv.className = 'message-usage';
+      usageDiv.textContent = msg.usage;
+      messageDiv.appendChild(usageDiv);
+    }
+
     messagesContainer.insertBefore(messageDiv, typingIndicator);
   });
 

@@ -86,9 +86,11 @@ export async function cmdAiAssist(cell: vscode.NotebookCell | undefined, context
       let responseText = '';
 
       if (provider === 'vscode-lm') {
-        responseText = await aiService.callVsCodeLm(userTrigger, config, systemPrompt);
+        const result = await aiService.callVsCodeLm(userTrigger, config, systemPrompt);
+        responseText = result.text;
       } else {
-        responseText = await aiService.callDirectApi(provider, userTrigger, config, systemPrompt);
+        const result = await aiService.callDirectApi(provider, userTrigger, config, systemPrompt);
+        responseText = result.text;
       }
       const { query, placement } = parseAiResponse(responseText);
       const cleanedQuery = StringUtils.cleanMarkdownCodeBlocks(query);

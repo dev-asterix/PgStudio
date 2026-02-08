@@ -117,7 +117,7 @@ IMPORTANT: At the end of each response, provide 2-4 numbered follow-up questions
 Make these questions relevant to the topic discussed and progressively more advanced.`;
   }
 
-  async callVsCodeLm(userMessage: string, config: vscode.WorkspaceConfiguration, customSystemPrompt?: string): Promise<string> {
+  async callVsCodeLm(userMessage: string, config: vscode.WorkspaceConfiguration, customSystemPrompt?: string): Promise<{ text: string, usage?: string }> {
     const configuredModel = config.get<string>('aiModel');
     let models: vscode.LanguageModelChat[];
 
@@ -181,7 +181,7 @@ Make these questions relevant to the topic discussed and progressively more adva
         responseText += fragment;
       }
 
-      return responseText;
+      return { text: responseText };
     } finally {
       // Clean up cancellation token source
       if (this._cancellationTokenSource) {
@@ -210,7 +210,7 @@ Make these questions relevant to the topic discussed and progressively more adva
     return content;
   }
 
-  async callDirectApi(provider: string, userMessage: string, config: vscode.WorkspaceConfiguration, customSystemPrompt?: string): Promise<string> {
+  async callDirectApi(provider: string, userMessage: string, config: vscode.WorkspaceConfiguration, customSystemPrompt?: string): Promise<{ text: string, usage?: string }> {
     const apiKey = config.get<string>('aiApiKey');
     if (!apiKey) {
       throw new Error(`API Key is required for ${provider} provider. Please configure postgresExplorer.aiApiKey.`);
@@ -304,7 +304,7 @@ Make these questions relevant to the topic discussed and progressively more adva
     return this._makeHttpRequest(endpoint, headers, body, provider);
   }
 
-  private _makeHttpRequest(endpoint: string, headers: any, body: any, provider: string): Promise<string> {
+  private _makeHttpRequest(endpoint: string, headers: any, body: any, provider: string): Promise<{ text: string, usage?: string }> {
     return new Promise((resolve, reject) => {
       const url = new URL(endpoint);
       const requestData = JSON.stringify(body);
@@ -332,19 +332,31 @@ Make these questions relevant to the topic discussed and progressively more adva
             }
 
             let content = '';
+            let usage = '';
+
             if (provider === 'anthropic') {
               content = response.content?.[0]?.text || '';
+              if (response.usage) {
+                 usage = `${response.usage.input_tokens} input, ${response.usage.output_tokens} output`;
+              }
             } else if (provider === 'gemini') {
               content = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              if (response.usageMetadata) {
+                 usage = `${response.usageMetadata.totalTokenCount} tokens`;
+              }
             } else {
+              // OpenAI or compatible
               content = response.choices?.[0]?.message?.content || '';
+              if (response.usage) {
+                 usage = `${response.usage.total_tokens} tokens (P:${response.usage.prompt_tokens}, C:${response.usage.completion_tokens})`;
+              }
             }
 
             if (!content && provider === 'custom') {
               content = JSON.stringify(response); // Fallback
             }
 
-            resolve(content);
+            resolve({ text: content, usage });
           } catch (e) {
             // If response is not JSON, we might want to log it
             reject(new Error(`Failed to parse API response: ${e instanceof Error ? e.message : String(e)}`));

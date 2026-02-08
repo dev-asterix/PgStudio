@@ -7,6 +7,7 @@ export interface ChatMessage {
   content: string;
   attachments?: FileAttachment[];
   mentions?: DbMention[];
+  usage?: string;
 }
 
 export interface FileAttachment {

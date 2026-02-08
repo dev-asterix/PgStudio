@@ -402,23 +402,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       vscode.window.setStatusBarMessage(`$(sparkle) AI: ${modelInfo}`, 3000);
 
       this._aiService.setMessages(this._messages);
-      let response: string;
+      let responseText: string;
+      let usageInfo: string | undefined;
 
       if (provider === 'vscode-lm') {
         console.log('[ChatView] Calling VS Code LM API...');
-        response = await this._aiService.callVsCodeLm(aiMessage, config);
+        const result = await this._aiService.callVsCodeLm(aiMessage, config);
+        responseText = result.text;
+        usageInfo = result.usage;
       } else {
         console.log('[ChatView] Calling direct API:', provider);
-        response = await this._aiService.callDirectApi(provider, aiMessage, config);
+        const result = await this._aiService.callDirectApi(provider, aiMessage, config);
+        responseText = result.text;
+        usageInfo = result.usage;
       }
 
-      console.log('[ChatView] AI response received, length:', response.length);
+      console.log('[ChatView] AI response received, length:', responseText.length);
 
       // Sanitize response - remove any HTML-like patterns that shouldn't be there
       // This prevents the model from learning bad patterns from previous responses
-      response = this._sanitizeResponse(response);
+      responseText = this._sanitizeResponse(responseText);
 
-      this._messages.push({ role: 'assistant', content: response });
+      this._messages.push({ role: 'assistant', content: responseText, usage: usageInfo });
 
       await this._saveCurrentSession();
     } catch (error) {
