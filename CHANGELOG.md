@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.3] - 2026-02-14
+
+### Added
+- **Query Performance Tracking**: Automatically tracks execution times for queries and warns about performance degradation ( > 50% slower than baseline).
+- **Visual Explain Plans**: Enhanced visualization for `EXPLAIN (FORMAT JSON)` results, providing a clear graphical representation of query execution paths.
+
+### Improved
+- **Message Handling Architecture**: Refactored internal message routing to a robust `MessageHandler` registry pattern for improved stability and maintainability.
+- **CodeLens UX**: Cleaned up and reordered CodeLens actions for better usability; removed redundant 'Explain' action (now accessible via main toolbar/menus).
+
+---
+
 ## [0.8.2] - 2026-02-08
 
 ### Added

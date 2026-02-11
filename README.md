@@ -37,6 +37,7 @@
 
 - 🔌 **Secure Connections** — VS Code SecretStorage encryption
 - 🛡️ **Connection Safety** — Environment tagging (🔴 PROD, 🟡 STAGING, 🟢 DEV), read-only mode, query safety analyzer
+- ⏱️ **Performance Tracking** — Historical query execution monitoring with degradation alerts
 - 📊 **Live Dashboard** — Real-time metrics & query monitoring
 - 📓 **SQL Notebooks** — Interactive notebooks with AI assistance
 - 💾 **Saved Queries** — Tag-based organization, connection context restoration, AI metadata generation, edit & reuse
@@ -93,6 +94,7 @@
 - Real-time activity monitoring
 - Index usage analytics
 - Bloat detection & warnings
+- Query performance history & alerts
 - Complete table definitions
 
 </td>
