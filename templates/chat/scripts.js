@@ -37,93 +37,93 @@ let mentionPickerVisible = false;
 let selectedMentionIndex = -1;
 let searchDebounceTimer = null;
 let currentHierarchyPath = {
-    connection: null,
-    database: null,
-    schema: null
+  connection: null,
+  database: null,
+  schema: null
 };
 
 // Hierarchy Navigation
 function navigateToRoot() {
-    currentHierarchyPath = { connection: null, database: null, schema: null };
-    vscode.postMessage({ type: 'getDbHierarchy', path: {} });
-    renderBreadcrumbs();
-    mentionList.innerHTML = '<div class="mention-picker-loading">Loading connections...</div>';
+  currentHierarchyPath = { connection: null, database: null, schema: null };
+  vscode.postMessage({ type: 'getDbHierarchy', path: {} });
+  renderBreadcrumbs();
+  mentionList.innerHTML = '<div class="mention-picker-loading">Loading connections...</div>';
 }
 
 function navigateToConnection(id, name) {
-    currentHierarchyPath = { 
-        connection: { id, name }, 
-        database: null, 
-        schema: null 
-    };
-    vscode.postMessage({ type: 'getDbHierarchy', path: { connectionId: id } });
-    renderBreadcrumbs();
-    mentionList.innerHTML = '<div class="mention-picker-loading">Loading databases...</div>';
+  currentHierarchyPath = {
+    connection: { id, name },
+    database: null,
+    schema: null
+  };
+  vscode.postMessage({ type: 'getDbHierarchy', path: { connectionId: id } });
+  renderBreadcrumbs();
+  mentionList.innerHTML = '<div class="mention-picker-loading">Loading databases...</div>';
 }
 
 function navigateToDatabase(dbName) {
-    if (!currentHierarchyPath.connection) return;
-    currentHierarchyPath.database = dbName;
-    currentHierarchyPath.schema = null;
-    vscode.postMessage({ 
-        type: 'getDbHierarchy', 
-        path: { 
-            connectionId: currentHierarchyPath.connection.id,
-            database: dbName
-        } 
-    });
-    renderBreadcrumbs();
-    mentionList.innerHTML = '<div class="mention-picker-loading">Loading schemas...</div>';
+  if (!currentHierarchyPath.connection) return;
+  currentHierarchyPath.database = dbName;
+  currentHierarchyPath.schema = null;
+  vscode.postMessage({
+    type: 'getDbHierarchy',
+    path: {
+      connectionId: currentHierarchyPath.connection.id,
+      database: dbName
+    }
+  });
+  renderBreadcrumbs();
+  mentionList.innerHTML = '<div class="mention-picker-loading">Loading schemas...</div>';
 }
 
 function navigateToSchema(schemaName) {
-    if (!currentHierarchyPath.connection || !currentHierarchyPath.database) return;
-    currentHierarchyPath.schema = schemaName;
-    vscode.postMessage({ 
-        type: 'getDbHierarchy', 
-        path: { 
-            connectionId: currentHierarchyPath.connection.id,
-            database: currentHierarchyPath.database,
-            schema: schemaName
-        } 
-    });
-    renderBreadcrumbs();
-    mentionList.innerHTML = '<div class="mention-picker-loading">Loading objects...</div>';
+  if (!currentHierarchyPath.connection || !currentHierarchyPath.database) return;
+  currentHierarchyPath.schema = schemaName;
+  vscode.postMessage({
+    type: 'getDbHierarchy',
+    path: {
+      connectionId: currentHierarchyPath.connection.id,
+      database: currentHierarchyPath.database,
+      schema: schemaName
+    }
+  });
+  renderBreadcrumbs();
+  mentionList.innerHTML = '<div class="mention-picker-loading">Loading objects...</div>';
 }
 
 function renderBreadcrumbs() {
-    const container = document.getElementById('mentionBreadcrumbs');
-    if (!container) return;
-    
-    let html = `<div class="mention-breadcrumb-item" onclick="navigateToRoot()">Home</div>`;
-    
-    if (currentHierarchyPath.connection) {
-        html += `<span class="mention-breadcrumb-separator">/</span>`;
-        html += `<div class="mention-breadcrumb-item" onclick="navigateToConnection('${currentHierarchyPath.connection.id}', '${escapeHtml(currentHierarchyPath.connection.name)}')">${escapeHtml(currentHierarchyPath.connection.name)}</div>`;
-    }
-    
-    if (currentHierarchyPath.database) {
-        html += `<span class="mention-breadcrumb-separator">/</span>`;
-        html += `<div class="mention-breadcrumb-item" onclick="navigateToDatabase('${escapeHtml(currentHierarchyPath.database)}')">${escapeHtml(currentHierarchyPath.database)}</div>`;
-    }
-    
-    if (currentHierarchyPath.schema) {
-        html += `<span class="mention-breadcrumb-separator">/</span>`;
-        html += `<div class="mention-breadcrumb-item" onclick="navigateToSchema('${escapeHtml(currentHierarchyPath.schema)}')">${escapeHtml(currentHierarchyPath.schema)}</div>`;
-    }
-    
-    container.innerHTML = html;
+  const container = document.getElementById('mentionBreadcrumbs');
+  if (!container) return;
+
+  let html = `<div class="mention-breadcrumb-item" onclick="navigateToRoot()">Home</div>`;
+
+  if (currentHierarchyPath.connection) {
+    html += `<span class="mention-breadcrumb-separator">/</span>`;
+    html += `<div class="mention-breadcrumb-item" onclick="navigateToConnection('${currentHierarchyPath.connection.id}', '${escapeHtml(currentHierarchyPath.connection.name)}')">${escapeHtml(currentHierarchyPath.connection.name)}</div>`;
+  }
+
+  if (currentHierarchyPath.database) {
+    html += `<span class="mention-breadcrumb-separator">/</span>`;
+    html += `<div class="mention-breadcrumb-item" onclick="navigateToDatabase('${escapeHtml(currentHierarchyPath.database)}')">${escapeHtml(currentHierarchyPath.database)}</div>`;
+  }
+
+  if (currentHierarchyPath.schema) {
+    html += `<span class="mention-breadcrumb-separator">/</span>`;
+    html += `<div class="mention-breadcrumb-item" onclick="navigateToSchema('${escapeHtml(currentHierarchyPath.schema)}')">${escapeHtml(currentHierarchyPath.schema)}</div>`;
+  }
+
+  container.innerHTML = html;
 }
 
 function handleContainerClick(index) {
-    const obj = dbObjects[index];
-    if (obj.type === 'connection') {
-        navigateToConnection(obj.connectionId, obj.name);
-    } else if (obj.type === 'database') {
-        navigateToDatabase(obj.name);
-    } else if (obj.type === 'schema') {
-        navigateToSchema(obj.name);
-    }
+  const obj = dbObjects[index];
+  if (obj.type === 'connection') {
+    navigateToConnection(obj.connectionId, obj.name);
+  } else if (obj.type === 'database') {
+    navigateToDatabase(obj.name);
+  } else if (obj.type === 'schema') {
+    navigateToSchema(obj.name);
+  }
 }
 
 // History functions
@@ -282,18 +282,18 @@ function hideMentionPicker() {
 function searchMentions(query) {
   console.log('[WebView] searchMentions:', query);
   if (!query) {
-     const path = {};
-     if (currentHierarchyPath.connection) {
-         path.connectionId = currentHierarchyPath.connection.id;
-         if (currentHierarchyPath.database) {
-             path.database = currentHierarchyPath.database;
-             if (currentHierarchyPath.schema) {
-                 path.schema = currentHierarchyPath.schema;
-             }
-         }
-     }
-     vscode.postMessage({ type: 'getDbHierarchy', path });
-     return;
+    const path = {};
+    if (currentHierarchyPath.connection) {
+      path.connectionId = currentHierarchyPath.connection.id;
+      if (currentHierarchyPath.database) {
+        path.database = currentHierarchyPath.database;
+        if (currentHierarchyPath.schema) {
+          path.schema = currentHierarchyPath.schema;
+        }
+      }
+    }
+    vscode.postMessage({ type: 'getDbHierarchy', path });
+    return;
   }
   vscode.postMessage({ type: 'searchDbObjects', query: query });
 }
@@ -315,51 +315,51 @@ function getDbTypeIcon(type) {
 
 function renderHierarchyItems(items) {
   console.log('[WebView] renderHierarchyItems called with', items.length, 'items');
-  dbObjects = items; 
-  
-  if (items.length === 0) {
-     mentionList.innerHTML = '<div class="mention-picker-empty">No items found.</div>';
-     return;
-  }
-  
-  let html = '';
-  
-  items.sort((a, b) => {
-      const aContainer = !!a.isContainer;
-      const bContainer = !!b.isContainer;
-      
-      if (aContainer && !bContainer) return -1;
-      if (!aContainer && bContainer) return 1;
-      return (a.name || '').localeCompare(b.name || '');
-  });
-  
-  items.forEach((obj, idx) => {
-      const isContainer = !!obj.isContainer;
-      let icon = getDbTypeIcon(obj.type);
-      
-      const clickHandler = isContainer 
-        ? `handleContainerClick(${idx})`
-        : `selectMention(${idx})`;
-        
-      const displayName = isContainer ? obj.name : (obj.schema ? obj.schema + '.' + obj.name : obj.name);
+  dbObjects = items;
 
-      let metaHtml = '';
-      if (obj.type !== 'connection') {
-          const metaParts = [];
-          
-          if (obj.connectionName) {
-             metaParts.push(obj.connectionName);
-          }
-          if (obj.database && obj.type !== 'database') {
-             metaParts.push(obj.database);
-          }
-          
-          if (metaParts.length > 0) {
-              metaHtml = `<div class="mention-item-meta">${escapeHtml(metaParts.join(' • '))}</div>`;
-          }
+  if (items.length === 0) {
+    mentionList.innerHTML = '<div class="mention-picker-empty">No items found.</div>';
+    return;
+  }
+
+  let html = '';
+
+  items.sort((a, b) => {
+    const aContainer = !!a.isContainer;
+    const bContainer = !!b.isContainer;
+
+    if (aContainer && !bContainer) return -1;
+    if (!aContainer && bContainer) return 1;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  items.forEach((obj, idx) => {
+    const isContainer = !!obj.isContainer;
+    let icon = getDbTypeIcon(obj.type);
+
+    const clickHandler = isContainer
+      ? `handleContainerClick(${idx})`
+      : `selectMention(${idx})`;
+
+    const displayName = isContainer ? obj.name : (obj.schema ? obj.schema + '.' + obj.name : obj.name);
+
+    let metaHtml = '';
+    if (obj.type !== 'connection') {
+      const metaParts = [];
+
+      if (obj.connectionName) {
+        metaParts.push(obj.connectionName);
+      }
+      if (obj.database && obj.type !== 'database') {
+        metaParts.push(obj.database);
       }
 
-      html += `<div class="mention-item" data-index="${idx}" onclick="${clickHandler}" onmouseenter="highlightMention(${idx})">
+      if (metaParts.length > 0) {
+        metaHtml = `<div class="mention-item-meta">${escapeHtml(metaParts.join(' • '))}</div>`;
+      }
+    }
+
+    html += `<div class="mention-item" data-index="${idx}" onclick="${clickHandler}" onmouseenter="highlightMention(${idx})">
           <div class="mention-item-name">
             <span class="db-type-icon">${icon}</span>
             <span class="mention-item-label">${escapeHtml(displayName)}</span>
@@ -367,7 +367,7 @@ function renderHierarchyItems(items) {
           ${metaHtml}
       </div>`;
   });
-  
+
   mentionList.innerHTML = html;
 }
 
@@ -416,10 +416,10 @@ function renderDbObjects(objects) {
     const metaParts = [];
     if (obj.connectionName) metaParts.push(obj.connectionName);
     if (obj.database) metaParts.push(obj.database);
-    
-    const metaHtml = metaParts.length > 0 
-        ? `<div class="mention-item-meta">${escapeHtml(metaParts.join(' • '))}</div>` 
-        : '';
+
+    const metaHtml = metaParts.length > 0
+      ? `<div class="mention-item-meta">${escapeHtml(metaParts.join(' • '))}</div>`
+      : '';
 
     return `<div class="mention-item" data-index="${idx}" onclick="selectMention(${idx})" onmouseenter="highlightMention(${idx})">
       <div class="mention-item-name">
@@ -445,7 +445,7 @@ function renderDbObjects(objects) {
     if (!typeOrder.includes(type) && grouped[type].length > 0) {
       html += '<div class="mention-group-header">' + (typeLabels[type] || type) + ' (' + grouped[type].length + ')</div>';
       grouped[type].forEach(obj => {
-         html += renderItem(obj);
+        html += renderItem(obj);
       });
     }
   });
@@ -576,7 +576,7 @@ function renderMentionChips() {
   selectedMentions.forEach((mention, index) => {
     const chip = document.createElement('div');
     chip.className = 'mention-chip';
-    
+
     // Prepare metadata text
     const metaParts = [];
     if (mention.connectionName) metaParts.push(mention.connectionName);
@@ -1251,9 +1251,9 @@ window.addEventListener('message', event => {
       break;
     case 'dbHierarchyData':
       if (message.error) {
-           mentionList.innerHTML = '<div class="mention-picker-empty">' + escapeHtml(message.error) + '</div>';
+        mentionList.innerHTML = '<div class="mention-picker-empty">' + escapeHtml(message.error) + '</div>';
       } else {
-           renderHierarchyItems(message.items);
+        renderHierarchyItems(message.items);
       }
       break;
     case 'dbObjectsResult':
@@ -1293,14 +1293,14 @@ window.addEventListener('message', event => {
         // Always ensure the text reference exists or append it
         const mentionText = '@' + mention.schema + '.' + mention.name;
         if (!chatInput.value.includes(mentionText)) {
-             const prefix = chatInput.value.length > 0 && !chatInput.value.endsWith(' ') ? ' ' : '';
-             chatInput.value += prefix + mentionText;
+          const prefix = chatInput.value.length > 0 && !chatInput.value.endsWith(' ') ? ' ' : '';
+          chatInput.value += prefix + mentionText;
         }
 
         chatInput.focus();
         // Move cursor to end
         chatInput.selectionStart = chatInput.selectionEnd = chatInput.value.length;
-        
+
         showToast('✅ Attached ' + mention.schema + '.' + mention.name + ' to chat', 'info');
       }
       break;
@@ -1314,6 +1314,7 @@ window.addEventListener('message', event => {
         aiModelNameEl.textContent = message.modelName || 'Unknown';
       }
       break;
+
     case 'notebookResult':
       handleNotebookResult(message.success, message.error);
       break;
@@ -1462,9 +1463,10 @@ function renderMessages(messages, animate = false) {
     messagesContainer.insertBefore(messageDiv, typingIndicator);
   });
 
-  // Scroll to bottom smoothly
   messagesContainer.scrollTo({
     top: messagesContainer.scrollHeight,
     behavior: 'smooth'
   });
 }
+
+

@@ -1,8 +1,5 @@
-/**
- * Chat module exports
- */
 export * from './types';
-export { DbObjectService } from './DbObjectService';
-export { AiService } from './AiService';
-export { SessionService } from './SessionService';
-export { getWebviewHtml } from './webviewHtml';
+export * from './DbObjectService';
+export * from './AiService';
+export * from './SessionService';
+export * from './webviewHtml';

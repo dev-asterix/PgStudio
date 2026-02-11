@@ -274,8 +274,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           await this._handleGetAllDbObjects();
           break;
         case 'getDbHierarchy':
-            await this._handleGetDbHierarchy(data.path);
-            break;
+          await this._handleGetDbHierarchy(data.path);
+          break;
         case 'openAiSettings':
           vscode.commands.executeCommand('postgres-explorer.aiSettings');
           break;
@@ -304,7 +304,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     // Build message with attachments
-    // Build message with attachments
     // For display (history), we only show links/names to keep UI clean
     let fullMessage = message;
     if (attachments && attachments.length > 0) {
@@ -328,7 +327,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       aiMessage = message + attachmentContent;
     }
 
-    // Process @ mentions - add schema context for AI
     // Process @ mentions - add schema context for AI
     // aiMessage already has attachments, now add schema context
     if (mentions && mentions.length > 0) {
@@ -506,34 +504,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async _handleGetDbHierarchy(path: any): Promise<void> {
-     try {
-        let items: DbObject[] = [];
+    try {
+      let items: DbObject[] = [];
 
-        if (!path || !path.connectionId) {
-          items = await this._dbObjectService.getConnections();
-        } else if (!path.database) {
-          items = await this._dbObjectService.getDatabases(path.connectionId);
-        } else if (!path.schema) {
-          items = await this._dbObjectService.getSchemas(path.connectionId, path.database);
-        } else {
-          items = await this._dbObjectService.getSchemaObjects(path.connectionId, path.database, path.schema);
-        }
-        
-        this._view?.webview.postMessage({
-          type: 'dbHierarchyData',
-          path: path,
-          items: items
-        });
+      if (!path || !path.connectionId) {
+        items = await this._dbObjectService.getConnections();
+      } else if (!path.database) {
+        items = await this._dbObjectService.getDatabases(path.connectionId);
+      } else if (!path.schema) {
+        items = await this._dbObjectService.getSchemas(path.connectionId, path.database);
+      } else {
+        items = await this._dbObjectService.getSchemaObjects(path.connectionId, path.database, path.schema);
+      }
 
-     } catch (error) {
-         console.error('Error fetching hierarchy:', error);
-         this._view?.webview.postMessage({
-            type: 'dbHierarchyData',
-            path: path,
-            items: [],
-            error: 'Failed to load database objects'
-         });
-     }
+      this._view?.webview.postMessage({
+        type: 'dbHierarchyData',
+        path: path,
+        items: items
+      });
+
+    } catch (error) {
+      console.error('Error fetching hierarchy:', error);
+      this._view?.webview.postMessage({
+        type: 'dbHierarchyData',
+        path: path,
+        items: [],
+        error: 'Failed to load database objects'
+      });
+    }
   }
 
   // ==================== File Handling ====================

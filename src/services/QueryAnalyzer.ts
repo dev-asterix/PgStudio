@@ -71,7 +71,7 @@ export interface QueryAnalysis {
 export class QueryAnalyzer {
   private static instance: QueryAnalyzer;
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): QueryAnalyzer {
     if (!QueryAnalyzer.instance) {
@@ -337,8 +337,8 @@ export class QueryAnalyzer {
       connection?.environment === 'production'
         ? '⚠️ PRODUCTION DATABASE ⚠️\n\n'
         : connection?.environment === 'staging'
-        ? '⚠️ STAGING DATABASE ⚠️\n\n'
-        : '';
+          ? '⚠️ STAGING DATABASE ⚠️\n\n'
+          : '';
 
     const opMessages = operations.map((op) => {
       const objectList =
@@ -498,7 +498,7 @@ export class QueryAnalyzer {
       .toLowerCase()
       .replace(/\?/g, ':param') // Normalize parameterized queries
       .replace(/\d+/g, 'N'); // Normalize numeric literals
-    
+
     // Simple hash function
     let hash = 0;
     for (let i = 0; i < normalized.length; i++) {
@@ -515,7 +515,7 @@ export class QueryAnalyzer {
   public analyzePerformanceAgainstBaseline(
     executionTime: number,
     baseline: QueryBaseline | null,
-    explainPlan: any
+    explainPlan?: any
   ): PerformanceAnalysis {
     const metrics = this.extractPlanMetrics(explainPlan);
 

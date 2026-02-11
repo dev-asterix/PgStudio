@@ -3,7 +3,7 @@ import { ChatViewProvider } from '../providers/ChatViewProvider';
 import { DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
 import { PostgresNotebookProvider } from '../notebookProvider';
 import { PostgresNotebookSerializer } from '../postgresNotebook';
-import { AiCodeLensProvider } from '../providers/AiCodeLensProvider';
+
 import { QueryCodeLensProvider } from '../providers/QueryCodeLensProvider';
 import { QueryHistoryProvider } from '../providers/QueryHistoryProvider';
 import { ProfilesTreeProvider, SavedQueriesTreeProvider } from '../providers/Phase7TreeProviders';
@@ -62,19 +62,7 @@ export function registerProviders(context: vscode.ExtensionContext, outputChanne
     )
   );
 
-  // Register CodeLens Provider for both 'postgres' and 'sql' languages
-  const aiCodeLensProvider = new AiCodeLensProvider();
-  context.subscriptions.push(
-    vscode.languages.registerCodeLensProvider(
-      { language: 'postgres', scheme: 'vscode-notebook-cell' },
-      aiCodeLensProvider
-    ),
-    vscode.languages.registerCodeLensProvider(
-      { language: 'sql', scheme: 'vscode-notebook-cell' },
-      aiCodeLensProvider
-    )
-  );
-  outputChannel.appendLine('AiCodeLensProvider registered for postgres and sql languages.');
+
 
   // Register Query CodeLens Provider for EXPLAIN actions
   const queryCodeLensProvider = new QueryCodeLensProvider();

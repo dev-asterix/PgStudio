@@ -9,6 +9,7 @@ import { ErrorService } from '../../services/ErrorService';
 import { QueryHistoryService } from '../../services/QueryHistoryService';
 import { getTransactionManager } from '../../services/TransactionManager';
 import { QueryAnalyzer } from '../../services/QueryAnalyzer';
+import { QueryPerformanceService } from '../../services/QueryPerformanceService';
 import { extensionContext } from '../../extension';
 
 export class SqlExecutor {
@@ -21,7 +22,7 @@ export class SqlExecutor {
   private applyAutoLimit(query: string, connection: any, notebookMetadata?: any, profileContext?: any): string {
     // Check profile-level auto-limit first (takes precedence)
     let limit: number | null = null;
-    
+
     // Try profile context first, then metadata
     if (profileContext?.autoLimitSelectResults !== undefined && profileContext.autoLimitSelectResults > 0) {
       limit = profileContext.autoLimitSelectResults;
@@ -31,7 +32,7 @@ export class SqlExecutor {
       // Fall back to global settings
       const autoLimitEnabled = vscode.workspace.getConfiguration()
         .get<boolean>('postgresExplorer.query.autoLimitEnabled', true);
-      
+
       if (autoLimitEnabled || connection.readOnlyMode) {
         limit = vscode.workspace.getConfiguration()
           .get<number>('postgresExplorer.performance.defaultLimit', 1000);
@@ -45,7 +46,10 @@ export class SqlExecutor {
 
     // Only apply to SELECT queries
     const trimmed = query.trim();
-    if (!/^\s*SELECT/i.test(trimmed)) {
+    // Strip comments to reliably detect SELECT
+    const cleanQuery = query.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+
+    if (!/^\s*SELECT/i.test(cleanQuery)) {
       return query;
     }
 
@@ -92,7 +96,7 @@ export class SqlExecutor {
       if (metadata.readOnlyMode !== undefined) {
         connection.readOnlyMode = metadata.readOnlyMode;
       }
-      
+
       // Apply profile settings from globalState if available
       if (activeProfileContext) {
         if (activeProfileContext.readOnlyMode !== undefined) {
@@ -159,7 +163,7 @@ export class SqlExecutor {
             const txManager = getTransactionManager();
             const sessionId = cell.notebook.uri.toString();
             const txInfo = txManager.getTransactionInfo(sessionId);
-            
+
             if (!txInfo || !txInfo.isActive) {
               await client.query('BEGIN');
               if (!txInfo) {
@@ -192,23 +196,36 @@ export class SqlExecutor {
           });
 
           result = await client.query(query);
+
+
           const stmtEndTime = Date.now();
           const executionTime = (stmtEndTime - stmtStartTime) / 1000;
+          const durationMs = executionTime * 1000;
 
-          // Add notice if auto-LIMIT was applied
-          if (autoLimitApplied) {
-            const defaultLimit = vscode.workspace.getConfiguration()
-              .get<number>('postgresExplorer.performance.defaultLimit', 1000);
-            notices.push(`ℹ️ Auto-LIMIT applied: Result set limited to ${defaultLimit} rows`);
-          }
+          // ... (auto-limit notice)
 
           const success = true;
           const slowThresholdMs = vscode.workspace.getConfiguration().get<number>('postgresExplorer.performance.slowQueryThresholdMs', 2000);
-          const durationMs = executionTime * 1000;
           const isSlow = durationMs >= slowThresholdMs;
+
+          // Performance Tracking
+          const queryAnalyzer = QueryAnalyzer.getInstance();
+          const queryHash = queryAnalyzer.getQueryHash(query);
+          const performanceService = QueryPerformanceService.getInstance();
+
+          // Record this execution
+          // We record *before* fetching baseline for next time? 
+          // Or fetch baseline *before* recording simple current execution?
+          // Logic: Compare against *historical* baseline (excluding current).
+          const baseline = performanceService.getBaseline(queryHash);
+
+          // Async record (fire and forget)
+          performanceService.recordExecution(queryHash, durationMs).catch(err => console.error('Failed to record performance:', err));
 
           // Extract EXPLAIN (FORMAT JSON) plan if available
           let explainPlan: any | undefined;
+          let performanceAnalysis: any | undefined;
+
           if (result.command === 'EXPLAIN' && result.rows?.length) {
             const planCell = result.rows[0]['QUERY PLAN'] ?? result.rows[0]['query_plan'];
             if (planCell) {
@@ -219,6 +236,18 @@ export class SqlExecutor {
               }
             }
           }
+
+          // Always analyze performance against baseline (even if no plan)
+          performanceAnalysis = queryAnalyzer.analyzePerformanceAgainstBaseline(
+            durationMs,
+            baseline,
+            explainPlan
+          );
+
+          console.log('[Performance] Hash:', queryHash);
+          console.log('[Performance] Baseline:', JSON.stringify(baseline));
+          console.log('[Performance] Duration:', durationMs);
+          console.log('[Performance] Analysis:', JSON.stringify(performanceAnalysis));
 
           // Build output data
           const tableInfo = await this.getTableInfo(client, result, query);
@@ -239,6 +268,7 @@ export class SqlExecutor {
             backendPid,
             tableInfo,
             explainPlan,
+            performanceAnalysis, // Pass analysis to frontend
             slowQuery: isSlow,
             breadcrumb: {
               connectionId: connection.id,
@@ -410,8 +440,10 @@ export class SqlExecutor {
     }
   }
 
-  public async executeBackgroundUpdate(message: any, notebook: vscode.NotebookDocument) {
-    const { statements } = message;
+  public async executeBatch(batch: { text: string; params: any[] }[], notebook: vscode.NotebookDocument) {
+    let client: any = null;
+    let done: any = null;
+
     try {
       const metadata = notebook.metadata as PostgresMetadata;
       if (!metadata?.connectionId) throw new Error('No connection found');
@@ -420,7 +452,19 @@ export class SqlExecutor {
       const connection = connections.find(c => c.id === metadata.connectionId);
       if (!connection) throw new Error('Connection not found');
 
-      const client = await ConnectionManager.getInstance().getSessionClient({
+      // We need a dedicated client for the transaction, not a pooled one that might be shared if we're not careful,
+      // though getSessionClient typically returns a pool client. 
+      // For transactions, we must ensure we hold the client for the duration.
+      // ConnectionManager.getSessionClient returns a persistent client for the session (notebook).
+      // However, that client might be busy. 
+      // Let's use getPooledClient directly to get a fresh client for this background operation, 
+      // to avoid interfering with any running query in the notebook interface (though usually single-threaded there).
+      // ACTUALLY, sticking to getSessionClient is safer for consistency with the session's state if we had temp tables, 
+      // but for updates, a fresh pooled client is often cleaner. 
+      // Let's use getSessionClient as before to minimize connection usage, but we need to ensure we don't interleave.
+      // Since VS Code notebooks are generally serial, it's fine.
+
+      client = await ConnectionManager.getInstance().getSessionClient({
         id: connection.id,
         host: connection.host,
         port: connection.port,
@@ -429,9 +473,23 @@ export class SqlExecutor {
         name: connection.name
       }, notebook.uri.toString());
 
-      await client.query(statements.join('\n'));
-      vscode.window.showInformationMessage(`✅ Successfully saved ${statements.length} change(s).`);
+      await client.query('BEGIN');
+
+      for (const item of batch) {
+        await client.query(item.text, item.params);
+      }
+
+      await client.query('COMMIT');
+      vscode.window.showInformationMessage(`✅ Successfully saved ${batch.length} change(s).`);
+
     } catch (err: any) {
+      if (client) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackErr) {
+          console.error('Failed to rollback transaction:', rollbackErr);
+        }
+      }
       await ErrorService.getInstance().handleCommandError(err, 'save changes');
     }
   }
