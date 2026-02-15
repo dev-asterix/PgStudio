@@ -91,6 +91,7 @@ export interface QueryResults {
   success?: boolean;
   backendPid?: number | null;
   explainPlan?: any;
+  performanceAnalysis?: any;
   slowQuery?: boolean;
   breadcrumb?: BreadcrumbContext;
 }

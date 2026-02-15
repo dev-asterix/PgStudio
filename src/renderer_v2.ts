@@ -8,6 +8,7 @@ import { ChartRenderer } from './renderer/components/chart/ChartRenderer';
 import { ChartControls } from './renderer/components/chart/ChartControls';
 import { TableInfo, QueryResults, ChartRenderOptions } from './common/types';
 import { getNumericColumns, isDateColumn } from './renderer/utils/formatting';
+import { ExplainVisualizer } from './renderer/components/ExplainVisualizer';
 
 // Register Chart.js components
 Chart.register(...registerables);
@@ -79,10 +80,23 @@ export const activate: ActivationFunction = context => {
       if (!summaryText) summaryText = 'No results';
       summary.textContent = summaryText;
 
-      header.appendChild(chevron);
-      header.appendChild(title);
       header.appendChild(summary);
       mainContainer.appendChild(header);
+
+      // Performance Warning
+      if (json.performanceAnalysis?.isDegraded) {
+        const perfBanner = document.createElement('div');
+        perfBanner.style.cssText = `
+          padding: 6px 12px;
+          background: rgba(255, 165, 0, 0.15);
+          border-bottom: 1px solid rgba(255, 165, 0, 0.3);
+          color: var(--vscode-editorWarning-foreground);
+          font-size: 11px;
+          display: flex; align-items: center; gap: 6px;
+        `;
+        perfBanner.innerHTML = `<span style="font-size:14px">⚠️</span> <span>${json.performanceAnalysis.analysis}</span>`;
+        mainContainer.appendChild(perfBanner);
+      }
 
       // Breadcrumb Navigation
       if (breadcrumb) {
@@ -263,25 +277,31 @@ export const activate: ActivationFunction = context => {
       rightActions.appendChild(optimizeBtn);
 
       // Detect if this is an EXPLAIN query (either JSON or text format)
-      const isExplainQuery = json.explainPlan || 
-                            (query && /^\s*EXPLAIN/i.test(query)) || 
-                            command === 'EXPLAIN' ||
-                            (columns.length === 1 && columns[0] === 'QUERY PLAN');
-      
+      const isExplainQuery = json.explainPlan ||
+        (query && /^\s*EXPLAIN/i.test(query)) ||
+        command === 'EXPLAIN' ||
+        (columns.length === 1 && columns[0] === 'QUERY PLAN');
+
       if (isExplainQuery) {
         const explainPlanBtn = createButton('🧭 View Plan', true);
-        explainPlanBtn.title = json.explainPlan 
-          ? 'Open EXPLAIN ANALYZE plan view' 
+        explainPlanBtn.title = json.explainPlan
+          ? 'Open EXPLAIN ANALYZE plan view'
           : 'Convert to JSON format and open visual plan view';
-        
+
         explainPlanBtn.onclick = () => {
           if (json.explainPlan) {
             // Already have JSON plan, show it directly
-            context.postMessage?.({
-              type: 'showExplainPlan',
-              plan: json.explainPlan,
-              query: query || ''
-            });
+            // Now we prefer the in-renderer tab if available
+            if (explainTab) {
+              switchTab('explain');
+            } else {
+              // Fallback / legacy external view
+              context.postMessage?.({
+                type: 'showExplainPlan',
+                plan: json.explainPlan,
+                query: query || ''
+              });
+            }
           } else {
             // Text format - request re-execution with FORMAT JSON
             // Log for debugging
@@ -442,8 +462,14 @@ export const activate: ActivationFunction = context => {
       const tableTab = createTab('Table', 'table', true, () => switchTab('table'));
       const chartTab = createTab('Chart', 'chart', false, () => switchTab('chart'));
 
+      let explainTab: HTMLElement | null = null;
+      if (json.explainPlan) {
+        explainTab = createTab('Explain Plan', 'explain', false, () => switchTab('explain'));
+      }
+
       tabs.appendChild(tableTab);
       tabs.appendChild(chartTab);
+      if (explainTab) tabs.appendChild(explainTab);
       if (!json.error) {
         contentContainer.appendChild(tabs);
       }
@@ -472,14 +498,14 @@ export const activate: ActivationFunction = context => {
           updateActionsVisibility();
         }
       });
-      
+
       // Store for cleanup on disposal
       tableInstances.set(element, tableRenderer);
 
       // CHART RENDERER
       const chartCanvas = document.createElement('canvas');
       const chartRenderer = new ChartRenderer(chartCanvas);
-      
+
       // Store for cleanup on disposal
       chartInstances.set(element, chartRenderer);
 
@@ -627,10 +653,26 @@ export const activate: ActivationFunction = context => {
             initialSelectedIndices: selectedIndices,
             modifiedCells
           });
+        } else if (mode === 'explain') {
+          // Explain Mode
+          if (tableTab) { tableTab.style.borderBottom = '2px solid transparent'; tableTab.style.opacity = '0.6'; }
+          if (chartTab) { chartTab.style.borderBottom = '2px solid transparent'; chartTab.style.opacity = '0.6'; }
+          if (explainTab) { explainTab.style.borderBottom = '2px solid var(--vscode-focusBorder)'; explainTab.style.opacity = '1'; }
+
+          updateActionsVisibility(); // Should probably hide most actions
+
+          const explainWrapper = document.createElement('div');
+          explainWrapper.style.cssText = 'flex: 1; overflow: hidden; height: 100%; display: flex; flex-direction: column;';
+          viewContainer.appendChild(explainWrapper);
+
+          new ExplainVisualizer(explainWrapper, json.explainPlan).render();
+
         } else {
           // Hide table specific styles
           tableTab.style.borderBottom = '2px solid transparent';
           tableTab.style.opacity = '0.6';
+          if (explainTab) { explainTab.style.borderBottom = '2px solid transparent'; explainTab.style.opacity = '0.6'; }
+
           chartTab.style.borderBottom = '2px solid var(--vscode-focusBorder)';
           chartTab.style.opacity = '1';
           updateActionsVisibility();

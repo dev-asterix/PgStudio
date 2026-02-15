@@ -23,7 +23,7 @@ export class QueryCodeLensProvider implements vscode.CodeLensProvider {
     }
 
     const text = document.getText().trim();
-    
+
     // Don't show CodeLens for empty cells
     if (!text) {
       return [];
@@ -35,35 +35,47 @@ export class QueryCodeLensProvider implements vscode.CodeLensProvider {
     const codeLenses: vscode.CodeLens[] = [];
     const range = new vscode.Range(0, 0, 0, 0);
 
+    // 1. Ask AI
+    codeLenses.push(
+      new vscode.CodeLens(range, {
+        title: '$(sparkle) Ask AI    ',
+        tooltip: 'Ask AI to modify this query',
+        command: 'postgres-explorer.aiAssist',
+        arguments: []
+      })
+    );
+
+    // 2. Chat
+    codeLenses.push(
+      new vscode.CodeLens(range, {
+        title: '$(comment-discussion) Chat    ',
+        tooltip: 'Open SQL Assistant chat with this query',
+        command: 'postgres-explorer.chatWithQuery',
+        arguments: []
+      })
+    );
+
+    // 3. Save Query (Always available)
+    codeLenses.push(
+      new vscode.CodeLens(range, {
+        title: '$(save) Save Query    ',
+        tooltip: 'Save this query to the library for easy reuse',
+        command: 'postgres-explorer.saveQueryToLibraryUI'
+      })
+    );
+
     // Show EXPLAIN options for any query that isn't already EXPLAIN
     if (!isExplainQuery) {
+      // 4. EXPLAIN ANALYZE
       codeLenses.push(
         new vscode.CodeLens(range, {
-          title: '$(graph) EXPLAIN',
-          tooltip: 'Show query execution plan without running the query',
-          command: 'postgres-explorer.explainQuery',
-          arguments: [document.uri, false]
-        })
-      );
-
-      codeLenses.push(
-        new vscode.CodeLens(range, {
-          title: '$(telescope) EXPLAIN ANALYZE',
+          title: '$(telescope) Explain Analyze',
           tooltip: 'Show query execution plan with actual runtime statistics',
           command: 'postgres-explorer.explainQuery',
           arguments: [document.uri, true]
         })
       );
     }
-
-    // Add Save Query codelens for all queries
-    codeLenses.push(
-      new vscode.CodeLens(range, {
-        title: '$(save) Save Query',
-        tooltip: 'Save this query to the library for easy reuse',
-        command: 'postgres-explorer.saveQueryToLibraryUI'
-      })
-    );
 
     return codeLenses;
   }
