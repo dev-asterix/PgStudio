@@ -75,6 +75,40 @@ export class TableDesignerPanel {
       `, [tableName, schema]);
       const tableComment = commentResult.rows[0]?.comment || '';
 
+      // Fetch constraints
+      const conResult = await client.query(`
+        SELECT
+          conname as name,
+          CASE contype
+            WHEN 'p' THEN 'PRIMARY KEY'
+            WHEN 'f' THEN 'FOREIGN KEY'
+            WHEN 'u' THEN 'UNIQUE'
+            WHEN 'c' THEN 'CHECK'
+            ELSE contype
+          END as type,
+          pg_get_constraintdef(oid) as definition
+        FROM pg_constraint
+        WHERE conrelid = $1::regclass
+        ORDER BY conname
+      `, [`"${schema}"."${tableName}"`]);
+      const constraints = conResult.rows;
+
+      // Fetch indexes
+      const idxResult = await client.query(`
+        SELECT
+          i.relname as name,
+          pg_get_indexdef(ix.indexrelid) as definition,
+          ix.indisunique as is_unique,
+          ix.indisprimary as is_primary
+        FROM pg_index ix
+        JOIN pg_class i ON i.oid = ix.indexrelid
+        JOIN pg_class t ON t.oid = ix.indrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE t.relname = $1 AND n.nspname = $2
+        ORDER BY i.relname
+      `, [tableName, schema]);
+      const indexes = idxResult.rows;
+
       const panelKey = `${item.connectionId}:${item.databaseName}:${schema}.${tableName}`;
 
       if (TableDesignerPanel._panels.has(panelKey)) {
@@ -105,6 +139,8 @@ export class TableDesignerPanel {
         schema,
         tableName,
         columns,
+        constraints,
+        indexes,
         tableComment,
         false
       );
@@ -116,6 +152,8 @@ export class TableDesignerPanel {
             await TableDesignerPanel._applyChanges(
               message.original,
               message.modified,
+              message.constraints || [],
+              message.indexes || [],
               schema,
               tableName,
               metadata
@@ -195,6 +233,8 @@ export class TableDesignerPanel {
         schema,
         '',
         defaultColumns,
+        [], // constraints
+        [], // indexes
         '',
         true
       );
@@ -232,11 +272,34 @@ export class TableDesignerPanel {
   private static async _applyChanges(
     original: any[],
     modified: any[],
+    constraints: any[],
+    indexes: any[],
     schema: string,
     tableName: string,
     metadata: any
   ): Promise<void> {
     const statements: string[] = [];
+
+    // 1. Drop/Add Constraints
+    for (const con of constraints) {
+      if (con._deleted) {
+        statements.push(`-- Drop Constraint\nALTER TABLE "${schema}"."${tableName}"\n  DROP CONSTRAINT IF EXISTS "${con.name}";`);
+      } else if (con._new) {
+        statements.push(`-- Add Constraint\nALTER TABLE "${schema}"."${tableName}"\n  ADD CONSTRAINT "${con.name}" ${con.rawDef};`);
+      }
+    }
+
+    // 2. Drop/Add Indexes
+    for (const idx of indexes) {
+      if (idx._deleted) {
+        statements.push(`-- Drop Index\nDROP INDEX IF EXISTS "${schema}"."${idx.name}";`);
+      } else if (idx._new) {
+        const unique = idx.is_unique ? 'UNIQUE ' : '';
+        const cols = idx.columns.map((c: string) => '"' + c + '"').join(', ');
+        statements.push(`-- Create Index\nCREATE ${unique}INDEX "${idx.name}" ON "${schema}"."${tableName}" USING ${idx.method} (${cols});`);
+      }
+    }
+
     const originalMap = new Map(original.map((c: any) => [c.column_name, c]));
     const modifiedMap = new Map(modified.map((c: any) => [c.column_name, c]));
 
@@ -395,10 +458,14 @@ export class TableDesignerPanel {
     schema: string,
     tableName: string,
     columns: any[],
+    constraints: any[],
+    indexes: any[],
     tableComment: string,
     isCreate: boolean
   ): string {
     const columnsJson = JSON.stringify(columns);
+    const constraintsJson = JSON.stringify(constraints);
+    const indexesJson = JSON.stringify(indexes);
     const mode = isCreate ? 'create' : 'edit';
 
     const pgTypes = [
@@ -433,6 +500,34 @@ export class TableDesignerPanel {
       align-items: center;
       gap: 12px;
     }
+    .header-tabs {
+      display: flex;
+      gap: 2px;
+      margin-left: 20px;
+    }
+    .tab-btn {
+      padding: 6px 16px;
+      background: transparent;
+      color: var(--vscode-foreground);
+      border: 1px solid transparent;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      opacity: 0.7;
+    }
+    .tab-btn:hover {
+      opacity: 1;
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .tab-btn.active {
+      opacity: 1;
+      border-bottom-color: var(--vscode-panelTitle-activeBorder);
+      color: var(--vscode-panelTitle-activeForeground);
+      background: var(--vscode-editor-background);
+    }
+    .tab-content { display: none; padding: 0; height: 100%; overflow: hidden; }
+    .tab-content.active { display: block; }
     .header h1 {
       font-size: 15px;
       font-weight: 600;
@@ -660,6 +755,21 @@ export class TableDesignerPanel {
       font-style: italic;
       padding: 8px;
     }
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal {
+      background: var(--vscode-sideBar-background);
+      border: 1px solid var(--vscode-panel-border);
+      padding: 20px;
+      width: 400px;
+      border-radius: 5px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .checkbox-list label { display: block; margin-bottom: 4px; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -667,10 +777,16 @@ export class TableDesignerPanel {
     <h1>🎨 Table Designer</h1>
     <span class="badge">${isCreate ? 'CREATE MODE' : 'EDIT MODE'}</span>
     <span style="color:var(--vscode-descriptionForeground);font-size:12px;">${isCreate ? schema : `${schema}.${tableName}`}</span>
+    <div class="header-tabs">
+      <button class="tab-btn active" onclick="switchTab('columns')">Columns</button>
+      <button class="tab-btn" onclick="switchTab('constraints')">Constraints</button>
+      <button class="tab-btn" onclick="switchTab('indexes')">Indexes</button>
+    </div>
   </div>
 
   <div class="main">
     <div class="left-pane">
+      <div id="tab-columns" class="tab-content active">
       ${isCreate ? `
       <p class="section-title">Table Properties</p>
       <div class="table-meta">
@@ -713,6 +829,129 @@ export class TableDesignerPanel {
       </table>
 
       <button class="btn btn-add" onclick="addColumn()">+ Add Column</button>
+      </div>
+
+      <div id="tab-constraints" class="tab-content">
+        <p class="section-title">Constraints</p>
+        <div class="info-box">Manage Foreign Keys, Check constraints, etc. PK/Unique on single columns are managed in the Columns tab.</div>
+        <table class="columns-table">
+          <thead>
+            <tr>
+              <th style="width:150px;">Name</th>
+              <th style="width:100px;">Type</th>
+              <th>Definition</th>
+              <th style="width:50px;"></th>
+            </tr>
+          </thead>
+          <tbody id="constraintRows"></tbody>
+        </table>
+        <div class="btn-group" style="display:flex;gap:5px;">
+          <button class="btn btn-add" onclick="openAddConstraintModal('check')">+ Check</button>
+          <button class="btn btn-add" onclick="openAddConstraintModal('unique')">+ Unique</button>
+          <button class="btn btn-add" onclick="openAddConstraintModal('fk')">+ Foreign Key</button>
+        </div>
+      </div>
+
+      <div id="tab-indexes" class="tab-content">
+        <p class="section-title">Indexes</p>
+        <table class="columns-table">
+          <thead>
+            <tr>
+              <th style="width:150px;">Name</th>
+              <th>Definition</th>
+              <th style="width:60px;">Unique</th>
+              <th style="width:60px;">Primary</th>
+              <th style="width:50px;"></th>
+            </tr>
+          </thead>
+          <tbody id="indexRows"></tbody>
+        </table>
+        <button class="btn btn-add" onclick="openAddIndexModal()">+ Add Index</button>
+      </div>
+    </div>
+    
+    <!-- Modals -->
+    <div id="modal-overlay" class="modal-overlay" style="display:none;">
+      <div class="modal">
+        <h3 id="modal-title">Add Index</h3>
+        <div class="field-group">
+          <label>Index Name</label>
+          <input type="text" id="idxName" placeholder="idx_name">
+        </div>
+        <div class="field-group">
+          <label>Access Method</label>
+          <select id="idxMethod">
+            <option value="btree">btree</option>
+            <option value="hash">hash</option>
+            <option value="gist">gist</option>
+            <option value="gin">gin</option>
+            <option value="brin">brin</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Columns</label>
+          <div id="idxColumns" class="checkbox-list" style="max-height:150px;overflow-y:auto;border:1px solid var(--vscode-input-border);padding:5px;"></div>
+        </div>
+        <div class="field-group">
+          <label style="display:flex;gap:5px;align-items:center;cursor:pointer;">
+            <input type="checkbox" id="idxUnique"> Unique Index
+          </label>
+        </div>
+        <div class="modal-actions" style="margin-top:15px;display:flex;justify-content:flex-end;gap:10px;">
+          <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveIndex()">Save</button>
+        </div>
+      </div>
+    </div>
+    
+    <div id="modal-constraint-overlay" class="modal-overlay" style="display:none;">
+      <div class="modal">
+        <h3 id="con-modal-title">Add Constraint</h3>
+        
+        <!-- Common -->
+        <div class="field-group">
+          <label>Constraint Name (Optional)</label>
+          <input type="text" id="conName" placeholder="auto-generated">
+        </div>
+
+        <!-- Check (hidden by default) -->
+        <div id="form-check" style="display:none;">
+          <div class="field-group">
+            <label>Check Expression</label>
+            <textarea id="conCheckExpr" placeholder="e.g. age > 18"></textarea>
+          </div>
+        </div>
+
+        <!-- Unique (hidden by default) -->
+        <div id="form-unique" style="display:none;">
+          <div class="field-group">
+            <label>Columns</label>
+            <div id="conUniqueCols" class="checkbox-list" style="max-height:150px;overflow-y:auto;border:1px solid var(--vscode-input-border);padding:5px;"></div>
+          </div>
+        </div>
+
+        <!-- FK (hidden by default) -->
+        <div id="form-fk" style="display:none;">
+          <div class="field-group">
+            <label>Local Column</label>
+             <!-- Simplified to single column FK for now, or multi? Let's do single for simplicity first, or multi-select -->
+            <div id="conFkLocalCols" class="checkbox-list" style="max-height:100px;overflow-y:auto;border:1px solid var(--vscode-input-border);padding:5px;"></div>
+          </div>
+          <div class="field-group">
+            <label>Target Table (schema.table)</label>
+            <input type="text" id="conFkTargetTable" placeholder="public.users">
+          </div>
+          <div class="field-group">
+            <label>Target Column(s) (comma separated)</label>
+            <input type="text" id="conFkTargetCols" placeholder="id">
+          </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top:15px;display:flex;justify-content:flex-end;gap:10px;">
+          <button class="btn btn-secondary" onclick="closeConstraintModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveConstraint()">Save</button>
+        </div>
+      </div>
     </div>
 
     <div class="right-pane">
@@ -733,17 +972,54 @@ export class TableDesignerPanel {
 
   <script>
     const vscode = acquireVsCodeApi();
+    
+    // Debug logging
+    window.onerror = function(message, source, lineno, colno, error) {
+      console.error('TableDesigner Script Error:', message, 'at', source, ':', lineno, ':', colno, error);
+      const errDiv = document.createElement('div');
+      errDiv.style.color = 'red';
+      errDiv.style.padding = '10px';
+      errDiv.innerText = 'Script Error: ' + message;
+      document.body.prepend(errDiv);
+    };
+
+    console.log('TableDesigner: Initializing...');
+
     const MODE = '${mode}';
     const SCHEMA = '${schema}';
     const TABLE_NAME = '${tableName}';
     const PG_TYPES = ${JSON.stringify(pgTypes)};
 
+    console.log('PG_TYPES:', PG_TYPES);
+    console.log('Columns Data:', ${columnsJson});
+
     let columns = ${columnsJson};
+    let constraints = ${constraintsJson};
+    let indexes = ${indexesJson};
     let nextId = columns.length + 1;
 
     // Initialize
-    renderColumns();
-    updateSQL();
+    try {
+      renderColumns();
+      renderConstraints();
+      renderIndexes();
+      updateSQL();
+    } catch (e) {
+      console.error('Initialization Error:', e);
+      document.body.innerHTML += '<div style="color:red;padding:20px;">Initialization Failed: ' + e.message + '</div>';
+    }
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      
+      document.getElementById('tab-' + tabName).classList.add('active');
+      // Find button with onclick="switchTab('tabName')" - simplified selector
+      const btns = document.querySelectorAll('.tab-btn');
+      if (tabName === 'columns') btns[0].classList.add('active');
+      if (tabName === 'constraints') btns[1].classList.add('active');
+      if (tabName === 'indexes') btns[2].classList.add('active');
+    }
 
     function renderColumns() {
       const tbody = document.getElementById('columnRows');
@@ -808,6 +1084,290 @@ export class TableDesignerPanel {
         \`;
         tbody.appendChild(tr);
       });
+    }
+
+    let currentConstraintType = '';
+
+    function renderConstraints() {
+      const tbody = document.getElementById('constraintRows');
+      tbody.innerHTML = '';
+      if (constraints.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="no-changes">No additional constraints defined.</td></tr>';
+        return;
+      }
+      constraints.forEach((con, idx) => {
+        if (con._deleted) {
+          const tr = document.createElement('tr');
+          tr.className = 'deleted';
+          tr.innerHTML = \`
+            <td colspan="3" style="padding:4px 8px;font-size:12px;">\${con.name} <em style="font-size:11px;">(will be dropped)</em></td>
+            <td style="text-align:center;"><button class="btn btn-secondary" style="padding:2px 6px;font-size:11px;" onclick="restoreConstraint(\${idx})">Restore</button></td>
+          \`;
+          tbody.appendChild(tr);
+          return;
+        }
+
+        let defDisplay = con.definition;
+        if (con._new) {
+           defDisplay = \`<span class="badge">NEW</span> \${con.description}\`;
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = \`
+          <td>\${con.name}</td>
+          <td><span class="badge">\${con.type}</span></td>
+          <td style="font-family:monospace;font-size:11px;">\${defDisplay}</td>
+          <td style="text-align:center;">
+             \${!con._new ? \`<button class="btn btn-secondary copy-btn" data-def="\${(con.definition || '').replace(/"/g, '&quot;')}" title="Copy Definition">📋</button>\` : ''}
+             <button class="btn btn-danger" onclick="deleteConstraint(\${idx})">✕</button>
+          </td>
+        \`;
+        tbody.appendChild(tr);
+      });
+      // Attach copy handlers
+      document.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          copyText(e.target.getAttribute('data-def'));
+        };
+      });
+    }
+
+    function renderIndexes() {
+      const tbody = document.getElementById('indexRows');
+      tbody.innerHTML = '';
+      if (indexes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="no-changes">No indexes defined.</td></tr>';
+        return;
+      }
+      indexes.forEach((idx, i) => {
+        if (idx._deleted) {
+          const tr = document.createElement('tr');
+          tr.className = 'deleted';
+          tr.innerHTML = \`
+            <td colspan="4" style="padding:4px 8px;font-size:12px;">\${idx.name} <em style="font-size:11px;">(will be dropped)</em></td>
+            <td style="text-align:center;"><button class="btn btn-secondary" style="padding:2px 6px;font-size:11px;" onclick="restoreIndex(\${i})">Restore</button></td>
+          \`;
+          tbody.appendChild(tr);
+          return;
+        }
+
+        let defDisplay = idx.definition;
+        if (idx._new) {
+           defDisplay = \`<span class="badge">NEW</span> \${idx.method} (\${idx.columns.join(', ')})\`;
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = \`
+          <td>\${idx.name}</td>
+          <td style="font-family:monospace;font-size:11px;">\${defDisplay}</td>
+          <td style="text-align:center;">\${idx.is_unique ? '✅' : ''}</td>
+          <td style="text-align:center;">\${idx.is_primary ? '🔑' : ''}</td>
+          <td style="text-align:center;">
+             \${!idx._new ? \`<button class="btn btn-secondary copy-btn" data-def="\${(idx.definition || '').replace(/"/g, '&quot;')}" title="Copy Definition">📋</button>\` : ''}
+             <button class="btn btn-danger" onclick="deleteIndex(\${i})">✕</button>
+          </td>
+        \`;
+        tbody.appendChild(tr);
+      });
+       // Attach copy handlers again for indexes
+       document.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          copyText(e.target.getAttribute('data-def'));
+        };
+      });
+    }
+
+    function openAddIndexModal() {
+      const overlay = document.getElementById('modal-overlay');
+      const colDiv = document.getElementById('idxColumns');
+      colDiv.innerHTML = '';
+      
+      // Populate columns
+      const activeCols = columns.filter(c => !c._deleted);
+      activeCols.forEach(c => {
+        const lbl = document.createElement('label');
+        lbl.innerHTML = \`<input type="checkbox" value="\${c.column_name}"> \${c.column_name}\`;
+        colDiv.appendChild(lbl);
+      });
+
+      // Auto-name
+      document.getElementById('idxName').value = \`\${TABLE_NAME}_idx\`;
+      document.getElementById('idxMethod').value = 'btree';
+      document.getElementById('idxUnique').checked = false;
+      
+      overlay.style.display = 'flex';
+      document.getElementById('idxName').focus();
+    }
+
+    function closeModal() {
+      document.getElementById('modal-overlay').style.display = 'none';
+    }
+
+    function saveIndex() {
+      const name = document.getElementById('idxName').value.trim();
+      const method = document.getElementById('idxMethod').value;
+      const isUnique = document.getElementById('idxUnique').checked;
+      
+      const selectedCols = Array.from(document.querySelectorAll('#idxColumns input:checked')).map(cb => cb.value);
+      
+      if (!name) { alert('Index Name is required'); return; }
+      if (selectedCols.length === 0) { alert('Select at least one column'); return; }
+
+      // Check name uniqueness locally
+      if (indexes.find(i => i.name === name && !i._deleted)) {
+        alert('Index name already exists');
+        return;
+      }
+
+      indexes.push({
+        name,
+        method,
+        columns: selectedCols,
+        is_unique: isUnique,
+        is_primary: false,
+        definition: '', // Generated on server
+        _new: true
+      });
+      
+      closeModal();
+      renderIndexes();
+      updateSQL();
+    }
+    
+    function openAddConstraintModal(type) {
+      currentConstraintType = type;
+      const overlay = document.getElementById('modal-constraint-overlay');
+      
+      // Reset forms
+      document.getElementById('conName').value = '';
+      document.getElementById('form-check').style.display = 'none';
+      document.getElementById('form-unique').style.display = 'none';
+      document.getElementById('form-fk').style.display = 'none';
+
+      const activeCols = columns.filter(c => !c._deleted);
+
+      if (type === 'check') {
+        document.getElementById('con-modal-title').innerText = 'Add Check Constraint';
+        document.getElementById('form-check').style.display = 'block';
+        document.getElementById('conCheckExpr').value = '';
+        document.getElementById('conCheckExpr').focus();
+      } else if (type === 'unique') {
+        document.getElementById('con-modal-title').innerText = 'Add Unique Constraint';
+        document.getElementById('form-unique').style.display = 'block';
+        const colDiv = document.getElementById('conUniqueCols');
+        colDiv.innerHTML = '';
+        activeCols.forEach(c => {
+          const lbl = document.createElement('label');
+          lbl.innerHTML = \`<input type="checkbox" value="\${c.column_name}"> \${c.column_name}\`;
+          colDiv.appendChild(lbl);
+        });
+      } else if (type === 'fk') {
+        document.getElementById('con-modal-title').innerText = 'Add Foreign Key';
+        document.getElementById('form-fk').style.display = 'block';
+        const colDiv = document.getElementById('conFkLocalCols');
+        colDiv.innerHTML = '';
+        activeCols.forEach(c => {
+          const lbl = document.createElement('label');
+          lbl.innerHTML = \`<input type="checkbox" value="\${c.column_name}"> \${c.column_name}\`;
+          colDiv.appendChild(lbl);
+        });
+        document.getElementById('conFkTargetTable').value = '';
+        document.getElementById('conFkTargetCols').value = '';
+      }
+
+      overlay.style.display = 'flex';
+    }
+
+    function closeConstraintModal() {
+      document.getElementById('modal-constraint-overlay').style.display = 'none';
+    }
+
+    function saveConstraint() {
+      const name = document.getElementById('conName').value.trim(); // Optional, can be auto-generated
+      let def = '';
+      let desc = '';
+      let typeLabel = '';
+      let constraintTypeKey = ''; // for backend
+
+      if (currentConstraintType === 'check') {
+        const expr = document.getElementById('conCheckExpr').value.trim();
+        if (!expr) { alert('Check expression required'); return; }
+        def = \`CHECK (\${expr})\`;
+        desc = expr;
+        typeLabel = 'CHECK';
+        constraintTypeKey = 'c';
+      } else if (currentConstraintType === 'unique') {
+        const selectedCols = Array.from(document.querySelectorAll('#conUniqueCols input:checked')).map(cb => cb.value);
+        if (selectedCols.length === 0) { alert('Select at least one column'); return; }
+        const cols = selectedCols.map(c => '"' + c + '"').join(', ');
+        def = \`UNIQUE (\${cols})\`;
+        desc = \`(\${selectedCols.join(', ')})\`;
+        typeLabel = 'UNIQUE';
+        constraintTypeKey = 'u';
+      } else if (currentConstraintType === 'fk') {
+        const selectedCols = Array.from(document.querySelectorAll('#conFkLocalCols input:checked')).map(cb => cb.value);
+        const targetTable = document.getElementById('conFkTargetTable').value.trim();
+        const targetCols = document.getElementById('conFkTargetCols').value.trim();
+        
+        if (selectedCols.length === 0) { alert('Select local column(s)'); return; }
+        if (!targetTable) { alert('Target table required'); return; }
+        if (!targetCols) { alert('Target column(s) required'); return; }
+
+        const cols = selectedCols.map(c => '"' + c + '"').join(', ');
+        def = \`FOREIGN KEY (\${cols}) REFERENCES \${targetTable} (\${targetCols})\`;
+        desc = \`(\${selectedCols.join(', ')}) -> \${targetTable}(\${targetCols})\`;
+        typeLabel = 'FOREIGN KEY';
+        constraintTypeKey = 'f';
+      }
+
+      // Generate name if empty
+      const finalName = name || \`\${TABLE_NAME}_\${currentConstraintType}_\${Date.now()}\`;
+
+      constraints.push({
+        name: finalName,
+        type: typeLabel,
+        definition: '', // Generated on server
+        description: desc, // For display
+        rawDef: def,      // For SQL generation
+        _new: true
+      });
+
+      closeConstraintModal();
+      renderConstraints();
+      updateSQL();
+      renderConstraints();
+      updateSQL();
+    }
+    
+    function deleteConstraint(idx) {
+      constraints[idx]._deleted = true;
+      renderConstraints();
+      updateSQL();
+    }
+    function restoreConstraint(idx) {
+      delete constraints[idx]._deleted;
+      renderConstraints();
+      updateSQL();
+    }
+    
+    function deleteIndex(idx) {
+      indexes[idx]._deleted = true;
+      renderIndexes();
+      updateSQL();
+    }
+    function restoreIndex(idx) {
+      delete indexes[idx]._deleted;
+      renderIndexes();
+      updateSQL();
+    }
+    
+    function copyText(text) {
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
     }
 
     function updateCol(idx, field, value) {
@@ -902,6 +1462,27 @@ export class TableDesignerPanel {
 
       const stmts = [];
 
+      // 1. Drop Constraints
+      for (const con of constraints) {
+        if (con._deleted) {
+          stmts.push('ALTER TABLE "' + SCHEMA + '"."' + TABLE_NAME + '"\\n  DROP CONSTRAINT IF EXISTS "' + con.name + '";');
+        } else if (con._new) {
+          stmts.push('ALTER TABLE "' + SCHEMA + '"."' + TABLE_NAME + '"\\n  ADD CONSTRAINT "' + con.name + '" ' + con.rawDef + ';');
+        }
+      }
+
+      // 2. Drop Indexes
+      for (const idx of indexes) {
+        if (idx._deleted) {
+          stmts.push('DROP INDEX IF EXISTS "' + SCHEMA + '"."' + idx.name + '";');
+        } else if (idx._new) {
+          const unique = idx.is_unique ? 'UNIQUE ' : '';
+          const cols = idx.columns.map(c => '"' + c + '"').join(', ');
+          stmts.push('CREATE ' + unique + 'INDEX "' + idx.name + '" ON "' + SCHEMA + '"."' + TABLE_NAME + '" USING ' + idx.method + ' (' + cols + ');');
+        }
+      }
+
+      // 3. Handle Columns
       for (const col of columns) {
         if (col._deleted) {
           stmts.push('ALTER TABLE "' + SCHEMA + '"."' + TABLE_NAME + '"\\n  DROP COLUMN "' + col.column_name + '";');
@@ -964,6 +1545,7 @@ export class TableDesignerPanel {
           type: 'applyChanges',
           tableName: tblName,
           modified: columns.filter(c => !c._deleted),
+          // constraints, indexes - for now create mode only handles columns
           tableComment: comment
         });
       } else {
@@ -971,7 +1553,9 @@ export class TableDesignerPanel {
         vscode.postMessage({
           type: 'applyChanges',
           original: originalCols,
-          modified: columns
+          modified: columns,
+          constraints: constraints, // Pass current constraints state (read-only for now)
+          indexes: indexes          // Pass current indexes state (read-only for now)
         });
       }
     }

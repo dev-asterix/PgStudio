@@ -936,7 +936,7 @@
       },
       {
         "command": "postgres-explorer.openTableDesigner",
-        "title": "Open Table Designer",
+        "title": "Open Table Designer (Visual)",
         "icon": "$(layout)",
         "category": "PgStudio: Schema"
       },
