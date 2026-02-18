@@ -48,6 +48,9 @@ import {
 } from '../commands/phase7';
 import { SavedQueriesTreeProvider } from '../providers/Phase7TreeProviders';
 
+// Visual Schema Design
+import { cmdOpenTableDesigner, cmdCreateTableVisual, cmdOpenSchemaDiff } from '../commands/schemaDesigner';
+
 export function registerAllCommands(
   context: vscode.ExtensionContext,
   databaseTreeProvider: DatabaseTreeProvider,
@@ -1155,6 +1158,20 @@ export function registerAllCommands(
     {
       command: 'postgres-explorer.loadSavedQueryUI',
       callback: () => loadSavedQueryUI()
+    },
+
+    // Visual Schema Design (Phase 7 Roadmap)
+    {
+      command: 'postgres-explorer.openTableDesigner',
+      callback: (item: DatabaseTreeItem) => cmdOpenTableDesigner(item, context)
+    },
+    {
+      command: 'postgres-explorer.createTableVisual',
+      callback: (item: DatabaseTreeItem) => cmdCreateTableVisual(item, context)
+    },
+    {
+      command: 'postgres-explorer.openSchemaDiff',
+      callback: (item: DatabaseTreeItem) => cmdOpenSchemaDiff(item, context)
     },
   ];
 

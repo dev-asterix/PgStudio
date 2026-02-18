@@ -864,7 +864,7 @@
       },
       {
         "command": "postgres-explorer.saveQueryToLibraryUI",
-        "title": "💾 Save Query (UI Form)",
+        "title": "\ud83d\udcbe Save Query (UI Form)",
         "icon": "$(save)",
         "category": "PgStudio: Queries"
       },
@@ -876,31 +876,31 @@
       },
       {
         "command": "postgres-explorer.loadSavedQueryUI",
-        "title": "📂 Load Saved Query",
+        "title": "\ud83d\udcc2 Load Saved Query",
         "icon": "$(folder-opened)",
         "category": "PgStudio: Queries"
       },
       {
         "command": "postgres-explorer.viewSavedQuery",
-        "title": "📌 View Saved Query",
+        "title": "\ud83d\udccc View Saved Query",
         "icon": "$(preview)",
         "category": "PgStudio: Queries"
       },
       {
         "command": "postgres-explorer.copySavedQuery",
-        "title": "📋 Copy Query",
+        "title": "\ud83d\udccb Copy Query",
         "icon": "$(copy)",
         "category": "PgStudio: Queries"
       },
       {
         "command": "postgres-explorer.editSavedQuery",
-        "title": "✏️ Edit Query",
+        "title": "\u270f\ufe0f Edit Query",
         "icon": "$(edit)",
         "category": "PgStudio: Queries"
       },
       {
         "command": "postgres-explorer.openSavedQueryInNotebook",
-        "title": "📘 Open in Notebook",
+        "title": "\ud83d\udcd8 Open in Notebook",
         "icon": "$(notebook)",
         "category": "PgStudio: Queries"
       },
@@ -933,6 +933,24 @@
         "title": "Import Saved Queries",
         "icon": "$(import)",
         "category": "PgStudio: Queries"
+      },
+      {
+        "command": "postgres-explorer.openTableDesigner",
+        "title": "Open Table Designer",
+        "icon": "$(layout)",
+        "category": "PgStudio: Schema"
+      },
+      {
+        "command": "postgres-explorer.createTableVisual",
+        "title": "Create Table (Visual)",
+        "icon": "$(add)",
+        "category": "PgStudio: Schema"
+      },
+      {
+        "command": "postgres-explorer.openSchemaDiff",
+        "title": "Schema Diff",
+        "icon": "$(diff)",
+        "category": "PgStudio: Schema"
       }
     ],
     "submenus": [
@@ -1847,6 +1865,26 @@
           "command": "postgres-explorer.deleteSavedQuery",
           "when": "view == postgresExplorer.savedQueries && viewItem == savedQuery",
           "group": "2_delete@1"
+        },
+        {
+          "command": "postgres-explorer.openTableDesigner",
+          "when": "view == postgresExplorer && viewItem == table",
+          "group": "1_actions"
+        },
+        {
+          "command": "postgres-explorer.openSchemaDiff",
+          "when": "view == postgresExplorer && viewItem == table",
+          "group": "1_actions"
+        },
+        {
+          "command": "postgres-explorer.createTableVisual",
+          "when": "view == postgresExplorer && viewItem == schema",
+          "group": "1_actions"
+        },
+        {
+          "command": "postgres-explorer.openSchemaDiff",
+          "when": "view == postgresExplorer && viewItem == schema",
+          "group": "1_actions"
         }
       ],
       "postgres-explorer.columnScriptsMenu": [

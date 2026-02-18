@@ -44,6 +44,25 @@ export async function activate(context: vscode.ExtensionContext) {
   QueryHistoryService.initialize(context.workspaceState);
   QueryPerformanceService.initialize(context.globalState);
 
+  // Migration: Ensure all connections have an ID (legacy connections might not)
+  const config = vscode.workspace.getConfiguration();
+  const connections = config.get<any[]>('postgresExplorer.connections') || [];
+  let hasChanges = false;
+
+  const migratedConnections = connections.map((conn, index) => {
+    if (!conn.id) {
+      hasChanges = true;
+      // Generate a stable-ish ID for legacy connections
+      return { ...conn, id: `${Date.now()}-${index}` };
+    }
+    return conn;
+  });
+
+  if (hasChanges) {
+    await config.update('postgresExplorer.connections', migratedConnections, vscode.ConfigurationTarget.Global);
+    console.log('Migrated legacy connections to include IDs');
+  }
+
   // Phase 7: Initialize ProfileManager and SavedQueriesService
   ProfileManager.getInstance().initialize(context);
   SavedQueriesService.getInstance().initialize(context);
