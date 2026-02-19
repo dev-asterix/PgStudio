@@ -16,8 +16,10 @@ import { cmdForeignDataWrapperOperations, cmdShowForeignDataWrapperProperties, c
 import { cmdCallFunction, cmdCreateFunction, cmdDropFunction, cmdEditFunction, cmdFunctionOperations, cmdRefreshFunction, cmdShowFunctionProperties } from '../commands/functions';
 import { cmdCreateMaterializedView, cmdDropMatView, cmdEditMatView, cmdMatViewOperations, cmdRefreshMatView, cmdViewMatViewData, cmdViewMatViewProperties } from '../commands/materializedViews';
 import { cmdNewNotebook, cmdExplainQuery } from '../commands/notebook';
-import { cmdCreateObjectInSchema, cmdCreateSchema, cmdSchemaOperations, cmdShowSchemaProperties } from '../commands/schema';
-import { cmdCreateTable, cmdDropTable, cmdEditTable, cmdInsertTable, cmdMaintenanceAnalyze, cmdMaintenanceReindex, cmdMaintenanceVacuum, cmdScriptCreate, cmdScriptDelete, cmdScriptInsert, cmdScriptSelect, cmdScriptUpdate, cmdShowTableProperties, cmdTableOperations, cmdTruncateTable, cmdUpdateTable, cmdViewTableData, cmdTableProfile, cmdTableActivity, cmdIndexUsage, cmdTableDefinition } from '../commands/tables';
+import { cmdCreateObjectInSchema, cmdCreateSchema, cmdSchemaOperations, cmdShowSchemaProperties, cmdPasteTable } from '../commands/schema';
+import {
+  cmdCreateTable, cmdDropTable, cmdEditTable, cmdInsertTable, cmdMaintenanceAnalyze, cmdMaintenanceReindex, cmdMaintenanceVacuum, cmdScriptCreate, cmdScriptDelete, cmdScriptInsert, cmdScriptSelect, cmdScriptUpdate, cmdShowTableProperties, cmdTableOperations, cmdTruncateTable, cmdUpdateTable, cmdViewTableData, cmdTableProfile, cmdTableActivity, cmdQuickCloneTable, cmdExportTable, cmdIndexUsage, cmdTableDefinition
+} from '../commands/tables';
 import { cmdAllOperationsTypes, cmdCreateType, cmdDropType, cmdEditTypes, cmdRefreshType, cmdShowTypeProperties } from '../commands/types';
 import { cmdAddRole, cmdAddUser, cmdDropRole, cmdEditRole, cmdGrantRevokeRole, cmdRefreshRole, cmdRoleOperations, cmdShowRoleProperties } from '../commands/usersRoles';
 import { cmdCreateView, cmdDropView, cmdEditView, cmdRefreshView, cmdScriptCreate as cmdViewScriptCreate, cmdScriptSelect as cmdViewScriptSelect, cmdShowViewProperties, cmdViewData, cmdViewOperations } from '../commands/views';
@@ -450,8 +452,16 @@ export function registerAllCommands(
       callback: async (item: DatabaseTreeItem) => await cmdTruncateTable(item, context)
     },
     {
+      command: 'postgres-explorer.quickClone',
+      callback: async (item: DatabaseTreeItem) => await cmdQuickCloneTable(item, context)
+    },
+    {
       command: 'postgres-explorer.insertData',
       callback: async (item: DatabaseTreeItem) => await cmdInsertTable(item, context)
+    },
+    {
+      command: 'postgres-explorer.exportTable',
+      callback: async (item: DatabaseTreeItem) => await cmdExportTable(item, context)
     },
     {
       command: 'postgres-explorer.updateData',
@@ -1196,7 +1206,9 @@ export function registerAllCommands(
       if (savedQueriesTreeProvider) {
         savedQueriesTreeProvider.refresh();
       }
-    })
+    }),
+
+    vscode.commands.registerCommand('postgres-explorer.pasteTable', (item) => cmdPasteTable(item, context))
   );
 
   outputChannel.appendLine('All commands registered successfully.');

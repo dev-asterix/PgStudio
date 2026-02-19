@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 import * as vscode from 'vscode';
-import { DatabaseTreeItem, DatabaseTreeProvider } from '../providers/DatabaseTreeProvider';
+import { DatabaseTreeItem, DatabaseTreeProvider } from '../../providers/DatabaseTreeProvider';
 import {
   MarkdownUtils,
   ErrorHandlers,
@@ -8,8 +8,8 @@ import {
   NotebookBuilder,
   QueryBuilder,
   validateCategoryItem,
-} from './helper';
-import { SchemaSQL } from './sql';
+} from '../helper';
+import { SchemaSQL } from '../sql';
 
 
 

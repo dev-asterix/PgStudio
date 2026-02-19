@@ -2,6 +2,7 @@ import type { ActivationFunction } from 'vscode-notebook-renderer';
 import { Chart, registerables } from 'chart.js';
 import { createButton, createTab, createBreadcrumb, BreadcrumbSegment } from './renderer/components/ui';
 import { createExportButton } from './renderer/features/export';
+import { createImportButton } from './renderer/features/import';
 import { createAiButtons } from './renderer/features/ai';
 import { TableRenderer, TableEvents } from './renderer/components/table/TableRenderer';
 import { ChartRenderer } from './renderer/components/chart/ChartRenderer';
@@ -230,6 +231,7 @@ export const activate: ActivationFunction = context => {
       deleteBtn.style.cssText = 'display: none; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); margin-left: 8px;';
 
       const exportBtn = createExportButton(columns, currentRows, tableInfo, context, query);
+      const importBtn = createImportButton(columns, tableInfo, context);
 
       // Left Group
       const leftActions = document.createElement('div');
@@ -237,6 +239,7 @@ export const activate: ActivationFunction = context => {
       leftActions.appendChild(selectAllBtn);
       leftActions.appendChild(copyBtn);
       leftActions.appendChild(deleteBtn);
+      leftActions.appendChild(importBtn);
       leftActions.appendChild(exportBtn);
 
       // Right Group
@@ -531,12 +534,14 @@ export const activate: ActivationFunction = context => {
           selectAllBtn.style.display = 'inline-block';
           copyBtn.style.display = 'inline-block';
           exportBtn.style.display = 'inline-block';
+          importBtn.style.display = tableInfo ? 'inline-block' : 'none';
           exportChartBtn.style.display = 'none';
         } else {
           // Chart Mode: Hide Table Buttons, Show Chart Button
           selectAllBtn.style.display = 'none';
           copyBtn.style.display = 'none';
           exportBtn.style.display = 'none'; // Hide Data Export in Chart Mode
+          importBtn.style.display = 'none';
           exportChartBtn.style.display = 'inline-block';
         }
 

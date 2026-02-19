@@ -165,6 +165,69 @@ const longRunningChart = new Chart(document.getElementById('longRunningChart'), 
   options: commonOptions
 });
 
+// 6. Checkpoints
+let checkpointHistory = { req: new Array(maxHistory).fill(0), timed: new Array(maxHistory).fill(0) };
+const checkpointsChart = new Chart(document.getElementById('checkpointsChart'), {
+  type: 'line',
+  data: {
+    labels: new Array(maxHistory).fill(''),
+    datasets: [
+      { label: 'Timed', data: checkpointHistory.timed, borderColor: colors.success, fill: false },
+      { label: 'Requested', data: checkpointHistory.req, borderColor: colors.danger, fill: false }
+    ]
+  },
+  options: commonOptions
+});
+
+// 7. Temp Files
+let tempFilesHistory = new Array(maxHistory).fill(0);
+const tempFilesChart = new Chart(document.getElementById('tempFilesChart'), {
+  type: 'line',
+  data: {
+    labels: new Array(maxHistory).fill(''),
+    datasets: [{
+      label: 'Temp Bytes',
+      data: tempFilesHistory,
+      borderColor: colors.warning,
+      fill: true,
+      backgroundColor: 'rgba(250, 204, 21, 0.1)'
+    }]
+  },
+  options: {
+    ...commonOptions,
+    scales: {
+      ...commonOptions.scales,
+      y: {
+        display: true,
+        grid: { color: colors.grid },
+        ticks: {
+          callback: function (value) {
+            if (value === 0) return '0';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(Math.abs(value)) / Math.log(k));
+            return parseFloat((value / Math.pow(k, i)).toFixed(0)) + ' ' + sizes[i];
+          }
+        }
+      }
+    }
+  }
+});
+
+// 8. Tuples Activity
+let tuplesHistory = { fetched: new Array(maxHistory).fill(0), returned: new Array(maxHistory).fill(0) };
+const tuplesChart = new Chart(document.getElementById('tuplesChart'), {
+  type: 'line',
+  data: {
+    labels: new Array(maxHistory).fill(''),
+    datasets: [
+      { label: 'Fetched', data: tuplesHistory.fetched, borderColor: colors.text, borderDash: [2, 2], fill: false },
+      { label: 'Returned', data: tuplesHistory.returned, borderColor: colors.accent, fill: false }
+    ]
+  },
+  options: commonOptions
+});
+
 let refreshIntervalId;
 
 function startAutoRefresh(interval) {
@@ -283,11 +346,41 @@ function updateDashboard(stats) {
     if (longRunningHistory.length > maxHistory) longRunningHistory.shift();
     longRunningChart.update('none');
 
+    // 6. Update Checkpoints
+    const cpTimed = stats.metrics.checkpoints_timed - (lastMetrics.checkpoints_timed || 0);
+    const cpReq = stats.metrics.checkpoints_req - (lastMetrics.checkpoints_req || 0);
+    checkpointHistory.timed.push(cpTimed >= 0 ? cpTimed : 0);
+    checkpointHistory.req.push(cpReq >= 0 ? cpReq : 0);
+    if (checkpointHistory.timed.length > maxHistory) {
+      checkpointHistory.timed.shift();
+      checkpointHistory.req.shift();
+    }
+    checkpointsChart.update('none');
+
+    // 7. Update Temp Files
+    // Temp bytes is a cumulative counter in pg_stat_database? No, it's cumulative.
+    // So we want the delta (bytes used in this interval)
+    const tempBytes = stats.metrics.temp_bytes - (lastMetrics.temp_bytes || 0);
+    tempFilesHistory.push(tempBytes >= 0 ? tempBytes : 0);
+    if (tempFilesHistory.length > maxHistory) tempFilesHistory.shift();
+    tempFilesChart.update('none');
+
+    // 8. Update Tuples
+    const tupFetched = stats.metrics.tuples_fetched - (lastMetrics.tuples_fetched || 0);
+    const tupReturned = stats.metrics.tuples_returned - (lastMetrics.tuples_returned || 0);
+    tuplesHistory.fetched.push(tupFetched >= 0 ? tupFetched : 0);
+    tuplesHistory.returned.push(tupReturned >= 0 ? tupReturned : 0);
+    if (tuplesHistory.fetched.length > maxHistory) {
+      tuplesHistory.fetched.shift();
+      tuplesHistory.returned.shift();
+    }
+    tuplesChart.update('none');
+
     // Update Health Indicator
     updateHealth(stats);
 
     // Update Locks FIRST (populates blockingPids for Active Queries)
-    updateLocks(stats.blockingLocks);
+    updateLocks(stats.blockingLocks); // Will also update Tree View if tab active
 
     // Update Active Queries Table (uses blockingPids for lock icons)
     updateActiveQueries(stats.activeQueries);
@@ -304,7 +397,12 @@ function updateDashboard(stats) {
       xact_rollback: stats.metrics.xact_rollback,
       blks_read: stats.metrics.blks_read,
       blks_hit: stats.metrics.blks_hit,
-      tps: tps
+      tps: tps,
+      checkpoints_timed: stats.metrics.checkpoints_timed,
+      checkpoints_req: stats.metrics.checkpoints_req,
+      temp_bytes: stats.metrics.temp_bytes,
+      tuples_fetched: stats.metrics.tuples_fetched,
+      tuples_returned: stats.metrics.tuples_returned
     };
   }
 }
@@ -468,18 +566,30 @@ function updateLocks(locks) {
     });
   }
 
+  // Render Tree View (regardless of tab, but could optimize)
+  renderLockTree(locks);
+
   // If we have no locks, show empty state
   if (!locks || locks.length === 0) {
     if (headerTitle) {
       headerTitle.innerText = 'Locks & Blocking';
       headerTitle.style.color = 'var(--fg-color)';
     }
-    if (tableContainer) tableContainer.style.borderColor = 'var(--border-color)';
+    // if (tableContainer) tableContainer.style.borderColor = 'var(--border-color)'; // Removed in new HTML
 
     if (container) {
-      container.style.display = 'none';
+      // container.style.display = 'none'; // Removed in new HTML
     }
+    // Update Tile
+    const tileVal = document.getElementById('locks-tile-value');
+    if (tileVal) tileVal.innerText = '0';
     return;
+  }
+
+  // Update Tile
+  const tileVal = document.getElementById('locks-tile-value');
+  if (tileVal) {
+    tileVal.innerHTML = `<span style="color: var(--danger-color)">${locks.length}</span>`;
   }
 
   // Restore visibility if we have locks
@@ -489,28 +599,125 @@ function updateLocks(locks) {
     headerTitle.innerText = 'Blocking Locks Detected';
     headerTitle.style.color = 'var(--danger-color)';
   }
-  if (tableContainer) tableContainer.style.borderColor = 'var(--danger-color)';
+}
 
-  if (container) {
-    const tbody = container.querySelector('tbody');
-    if (tbody) {
-      tbody.innerHTML = locks.map(l => {
-        // Fix null object display
-        let objectDisplay = l.locked_object;
-        if (!objectDisplay || objectDisplay === 'null' || objectDisplay === null) {
-          objectDisplay = '<span style="color: var(--muted-color); font-style: italic;">Session-level lock</span>';
-        }
-        return `
-                <tr>
-                    <td class="mono" style="color: var(--danger-color); font-weight: bold;">${l.blocking_pid}</td>
-                    <td class="mono">${l.blocked_pid}</td>
-                    <td>${objectDisplay}</td>
-                    <td>${l.lock_mode}</td>
-                </tr>
-            `;
-      }).join('');
-    }
+function renderLockTree(locks) {
+  const container = document.getElementById('locks-tree-container');
+  const emptyState = document.getElementById('locks-empty-state');
+
+  if (!locks || locks.length === 0) {
+    if (container) container.innerHTML = '';
+    if (emptyState) emptyState.style.display = 'block';
+    return;
   }
+
+  if (emptyState) emptyState.style.display = 'none';
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  // Build Graph
+  const nodes = new Set();
+  const relations = []; // { blocker, blocked, info }
+
+  locks.forEach(l => {
+    nodes.add(l.blocking_pid);
+    nodes.add(l.blocked_pid);
+    relations.push({
+      parent: l.blocking_pid,
+      child: l.blocked_pid,
+      info: l
+    });
+  });
+
+  // Find Roots (Nodes that are parents but never children in this set)
+  // Note: In circular deadlock, there are no roots. We pick one arbitrarily or handle it.
+  // Actually, "blocking_pid" might itself be blocked by someone else outside this set? 
+  // No, pg_locks join should cover the chain if we fetched enough. 
+  // DashboardData fetches blocking locks.
+
+  const children = new Set(relations.map(r => r.child));
+  const roots = Array.from(nodes).filter(n => !children.has(n));
+
+  // If no roots and we have nodes -> Cycle. Pick one.
+  if (roots.length === 0 && nodes.size > 0) {
+    roots.push(Array.from(nodes)[0]);
+    // Visual indicator of cycle?
+  }
+
+  const createNode = (pid, visited) => {
+    const div = document.createElement('div');
+    div.className = 'lock-node';
+
+    if (visited.has(pid)) {
+      div.innerHTML = `<div>🔄 Cycle detected: PID ${pid}</div>`;
+      return div;
+    }
+    visited.add(pid);
+
+    // Find relations where this pid is the blocker
+    const myRelations = relations.filter(r => r.parent === pid);
+
+    // Node Content
+    // Try to find user/query info from the relations (either as blocker or blocked)
+    // We know 'l' has blocker info and blocked info.
+    let user = 'Unknown';
+    let query = 'Unknown';
+    let mode = '';
+    let obj = '';
+
+    // If I am a child of someone, they have my info in 'blocked_*'
+    // If I am a parent, I have my info in 'blocking_*'
+    // We can just find *any* relation involving this PID to get some info
+    const asBlocker = relations.find(r => r.parent === pid);
+    const asBlocked = relations.find(r => r.child === pid);
+
+    if (asBlocker) {
+      user = asBlocker.info.blocking_user;
+      query = asBlocker.info.blocking_query;
+    } else if (asBlocked) {
+      user = asBlocked.info.blocked_user;
+      query = asBlocked.info.blocked_query;
+      mode = asBlocked.info.lock_mode;
+      obj = asBlocked.info.locked_object;
+    }
+
+    div.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span class="mono" style="font-weight:bold; ${asBlocker ? 'color:var(--danger-color)' : ''}">PID ${pid}</span>
+                    <span style="margin-left:8px; color:var(--muted-color)">${user}</span>
+                </div>
+                <div>
+                    ${asBlocked ? `<span class="badge">${asBlocked.info.lock_mode}</span>` : '<span class="badge" style="background:var(--success-color); color:black;">Root</span>'}
+                </div>
+            </div>
+            <div class="mono" style="font-size:0.85em; margin-top:4px; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                ${query || '(No query info)'}
+            </div>
+            ${asBlocked ? `<div style="font-size:0.8em; margin-top:4px; color:var(--muted-color)">Waiting for: ${asBlocked.info.locked_object}</div>` : ''}
+            <div style="margin-top:8px; display:flex; gap:8px;">
+                 <button class="btn-action btn-danger" data-action="terminate" data-pid="${pid}">Kill Session</button>
+                 <button class="btn-action" data-action="cancel" data-pid="${pid}">Cancel Query</button>
+            </div>
+        `;
+
+    // Children
+    if (myRelations.length > 0) {
+      const childContainer = document.createElement('div');
+      childContainer.className = 'lock-children';
+      myRelations.forEach(r => {
+        childContainer.appendChild(createNode(r.child, new Set(visited)));
+      });
+      div.appendChild(childContainer);
+    }
+
+    return div;
+  };
+
+  roots.forEach(rootPid => {
+    container.appendChild(createNode(rootPid, new Set()));
+  });
 }
 
 // Recommended Action helper
@@ -642,6 +849,30 @@ window.addEventListener('message', event => {
 
 // Auto Refresh
 setInterval(manualRefresh, 5000);
+
+// --- Tab Logic ---
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+
+    t.classList.add('active');
+    const tabId = t.getAttribute('data-tab');
+    document.getElementById('tab-' + tabId).classList.add('active');
+
+    // Trigger Resize for charts if they become visible
+    if (tabId === 'overview') {
+      tpsChart.resize();
+      connChart.resize();
+      rollbackChart.resize();
+      cacheHitChart.resize();
+      longRunningChart.resize();
+      checkpointsChart.resize();
+      tempFilesChart.resize();
+      tuplesChart.resize();
+    }
+  };
+});
 
 // Init
 initializeDashboard(initialStats);

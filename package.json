@@ -240,6 +240,16 @@
         "icon": "$(edit)"
       },
       {
+        "command": "postgres-explorer.quickClone",
+        "title": "Quick Clone Table",
+        "icon": "$(files)"
+      },
+      {
+        "command": "postgres-explorer.exportTable",
+        "title": "Export Table Data",
+        "icon": "$(export)"
+      },
+      {
         "command": "postgres-explorer.createInSchema",
         "title": "Create Object",
         "icon": "$(add)"
@@ -253,6 +263,11 @@
         "command": "postgres-explorer.createSchema",
         "title": "Create Schema",
         "icon": "$(add)"
+      },
+      {
+        "command": "postgres-explorer.pasteTable",
+        "title": "Smart Paste (create table from clipboard)",
+        "icon": "$(clippy)"
       },
       {
         "command": "postgres-explorer.refreshMaterializedView",
@@ -1434,9 +1449,19 @@
           "group": "2_operations@1"
         },
         {
+          "command": "postgres-explorer.quickClone",
+          "when": "view == postgresExplorer && viewItem == table",
+          "group": "2_operations@0"
+        },
+        {
           "command": "postgres-explorer.insertData",
           "when": "view == postgresExplorer && viewItem == table",
           "group": "2_operations@2"
+        },
+        {
+          "command": "postgres-explorer.exportTable",
+          "when": "view == postgresExplorer && viewItem == table",
+          "group": "2_operations@3"
         },
         {
           "command": "postgres-explorer.updateData",
@@ -1446,10 +1471,20 @@
         {
           "command": "postgres-explorer.showSchemaProperties",
           "when": "view == postgresExplorer && viewItem == schema",
-          "group": "inline@0"
+          "group": "inline@2"
         },
         {
-          "command": "postgres-explorer.createInSchema",
+          "command": "postgres-explorer.pasteTable",
+          "when": "view == postgresExplorer && viewItem == schema",
+          "group": "1_actions"
+        },
+        {
+          "command": "postgres-explorer.pasteTable",
+          "when": "view == postgresExplorer && viewItem == table",
+          "group": "1_actions"
+        },
+        {
+          "command": "postgres-explorer.schemaOperations",
           "when": "view == postgresExplorer && viewItem == schema",
           "group": "inline@1",
           "icon": "$(add)"
@@ -2032,7 +2067,8 @@
     "vscode:prepublish": "npm run esbuild-base -- --minify && npm run esbuild-renderer -- --minify",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:ssh2 --external:pg --format=cjs --platform=node --main-fields=main",
     "esbuild-renderer": "esbuild ./src/renderer_v2.ts --bundle --outfile=dist/renderer_v2.js --format=esm --platform=browser",
-    "compile": "tsc -p ./ && npm run esbuild-renderer",
+    "copy-templates": "cp -r templates dist/",
+    "compile": "tsc -p ./ && npm run esbuild-renderer && npm run copy-templates",
     "watch": "tsc -watch -p ./",
     "esbuild": "npm run esbuild-base -- --sourcemap && npm run esbuild-renderer -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch & npm run esbuild-renderer -- --sourcemap --watch",

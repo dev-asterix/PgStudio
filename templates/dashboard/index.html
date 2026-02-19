@@ -8,7 +8,7 @@
   <title>Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    {{INLINE_STYLES}}
+    /* INLINE_STYLES */
   </style>
 </head>
 
@@ -25,10 +25,10 @@
               style="color: inherit; text-decoration: none; margin-right: 16px;" id="count-tables">... Tables</a>
             <a href="#" data-action="showDetails" data-type="views"
               style="color: inherit; text-decoration: none; margin-right: 16px;" id="count-views">... Views</a>
-            <a href="#" data-action="showDetails" data-type="functions" style="color: inherit; text-decoration: none; margin-right: 16px;"
-              id="count-funcs">... Funcs</a>
-            <a href="#" data-action="showDetails" data-type="pgStatStatements" style="color: inherit; text-decoration: none;"
-              id="count-top-sql">Top SQL</a>
+            <a href="#" data-action="showDetails" data-type="functions"
+              style="color: inherit; text-decoration: none; margin-right: 16px;" id="count-funcs">... Funcs</a>
+            <a href="#" data-action="showDetails" data-type="pgStatStatements"
+              style="color: inherit; text-decoration: none;" id="count-top-sql">Top SQL</a>
           </span>
         </div>
       </div>
@@ -37,130 +37,149 @@
       </div>
     </div>
 
-    <!-- 1. Top Strip: Context + Risk -->
-    <div class="grid-strip">
-      <!-- Health Tile -->
-      <div class="card" id="tile-health">
-        <span class="label">DB Health</span>
-        <div class="value" style="display: flex; align-items: center;">
-          <span id="health-dot" class="status-dot status-ok"></span>
-          <span id="health-text">Healthy</span>
+    <!-- Navigation Tabs -->
+    <div class="tabs-nav">
+      <div class="tab active" data-tab="overview">Overview</div>
+      <div class="tab" data-tab="locks">Locks & Blocking</div>
+      <div class="tab" data-tab="settings" style="margin-left: auto; display: none;">Settings</div>
+    </div>
+
+    <!-- TAB: OVERVIEW -->
+    <div id="tab-overview" class="tab-content active">
+      <!-- 1. Top Strip: Context + Risk -->
+      <div class="grid-strip">
+        <!-- Health Tile -->
+        <div class="card" id="tile-health">
+          <span class="label">DB Health</span>
+          <div class="value" style="display: flex; align-items: center;">
+            <span id="health-dot" class="status-dot status-ok"></span>
+            <span id="health-text">Healthy</span>
+          </div>
+          <div id="recommended-action"
+            style="display: none; font-size: 0.75rem; margin-top: 6px; padding: 4px 8px; background: rgba(248, 113, 113, 0.15); border-radius: 4px; color: var(--danger-color);">
+          </div>
         </div>
-        <div id="recommended-action"
-          style="display: none; font-size: 0.75rem; margin-top: 6px; padding: 4px 8px; background: rgba(248, 113, 113, 0.15); border-radius: 4px; color: var(--danger-color);">
+
+        <!-- Active Load -->
+        <div class="card interactive" data-action="jumpToQueries">
+          <span class="label">Active Load</span>
+          <div class="value" id="active-load-value">
+            ...
+          </div>
+          <div style="font-size: 0.8rem; color: var(--muted-color); margin-top: 4px;" id="active-load-sub">
+            No waits
+          </div>
+        </div>
+
+        <!-- Locks (Tile) -->
+        <div class="card interactive" onclick="document.querySelector('[data-tab=locks]').click()">
+          <span class="label">Blocking Locks</span>
+          <div class="value" id="locks-tile-value">
+            0
+          </div>
+        </div>
+
+        <!-- TPS -->
+        <div class="card" id="tps-card" title="Transactions per second">
+          <span class="label">Throughput (TPS)</span>
+          <div class="value">
+            <span id="tps-value">0</span>
+            <span id="tps-delta"
+              style="font-size: 0.6em; margin-left: 8px; font-weight: normal; color: var(--muted-color);"></span>
+          </div>
+          <div style="height: 20px; width: 100%;">
+            <canvas id="tpsSparkline"></canvas>
+          </div>
+        </div>
+
+        <!-- Issues / Events -->
+        <div class="card">
+          <span class="label" id="issues-label">Issues</span>
+          <div id="issues-card-content">
+            <!-- dynamic content -->
+          </div>
         </div>
       </div>
 
-      <!-- Active Load -->
-      <div class="card interactive" data-action="jumpToQueries">
-        <span class="label">Active Load</span>
-        <div class="value" id="active-load-value">
-          ...
+      <!-- 2. Charts: Density without Noise -->
+      <div class="charts-row">
+        <div class="chart-box">
+          <div class="label" style="display: flex; justify-content: space-between;">
+            <span>Connections</span>
+            <span style="font-size: 0.8em; color: var(--muted-color); font-weight: normal;">History</span>
+          </div>
+          <canvas id="connectionsHistoryChart"></canvas>
         </div>
-        <div style="font-size: 0.8rem; color: var(--muted-color); margin-top: 4px;" id="active-load-sub">
-          No waits
+        <div class="chart-box">
+          <div class="label">Rollback Spikes</div>
+          <canvas id="rollbackChart"></canvas>
         </div>
-      </div>
-
-      <!-- Locks -->
-      <div class="card interactive" data-action="jumpToLocks">
-        <span class="label">Blocking Locks</span>
-        <div class="value" id="locks-tile-value">
-          ...
+        <div class="chart-box">
+          <div class="label">Cache Hit Ratio</div>
+          <canvas id="cacheHitChart"></canvas>
         </div>
-      </div>
-
-      <!-- TPS -->
-      <div class="card" id="tps-card" title="Transactions per second">
-        <span class="label">Throughput (TPS)</span>
-        <div class="value">
-          <span id="tps-value">0</span>
-          <span id="tps-delta"
-            style="font-size: 0.6em; margin-left: 8px; font-weight: normal; color: var(--muted-color);"></span>
-        </div>
-        <div style="height: 20px; width: 100%;">
-          <canvas id="tpsSparkline"></canvas>
+        <div class="chart-box">
+          <div class="label">Long Running (>5s)</div>
+          <canvas id="longRunningChart"></canvas>
         </div>
       </div>
 
-      <!-- Issues / Events -->
-      <div class="card">
-        <span class="label" id="issues-label">Issues</span>
-        <div id="issues-card-content">
-          <!-- dynamic content -->
+      <!-- 2b. Secondary Metrics (IO / Checkpoints) -->
+      <div class="charts-row" style="margin-top: 12px;">
+        <div class="chart-box">
+          <div class="label">Checkpoints (Req/Timed)</div>
+          <canvas id="checkpointsChart"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="label">Temp Files (Bytes)</div>
+          <canvas id="tempFilesChart"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="label">Tuple Activity (Fetch/Ret)</div>
+          <canvas id="tuplesChart"></canvas>
+        </div>
+      </div>
+
+      <!-- 3. Active Queries (Main Event) -->
+      <div style="margin-top: 20px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 12px; align-items: flex-end;">
+          <h3 style="font-size: 1.1rem;">Active Queries</h3>
+          <div style="display:flex; gap: 8px;">
+            <!-- Filter controls could go here -->
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table id="active-queries-table">
+            <thead>
+              <tr>
+                <th style="width: 80px;">PID</th>
+                <th style="width: 100px;">User</th>
+                <th style="width: 80px;">Duration</th>
+                <th style="width: 140px;">Start Time</th>
+                <th>Query</th>
+                <th style="width: 120px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
 
-    <!-- 2. Charts: Density without Noise -->
-    <div class="charts-row">
-      <div class="chart-box">
-        <div class="label" style="display: flex; justify-content: space-between;">
-          <span>Connections</span>
-          <!-- Max connections can be updated dynamically if we want, but usually static per session -->
-          <span style="font-size: 0.8em; color: var(--muted-color); font-weight: normal;">History</span>
+    <!-- TAB: LOCKS -->
+    <div id="tab-locks" class="tab-content">
+      <div style="padding: 20px;">
+        <div class="empty-state" id="locks-empty-state"
+          style="display:none; text-align:center; padding: 40px; color: var(--muted-color);">
+          <h3>No blocking locks detected</h3>
+          <p>Your database is running smoothly with no transaction conflicts.</p>
         </div>
-        <canvas id="connectionsHistoryChart"></canvas>
-      </div>
-      <div class="chart-box">
-        <div class="label">Rollback Spikes</div>
-        <canvas id="rollbackChart"></canvas>
-      </div>
-      <div class="chart-box">
-        <div class="label">Cache Hit Ratio</div>
-        <canvas id="cacheHitChart"></canvas>
-      </div>
-      <div class="chart-box">
-        <div class="label">Long Running (>5s)</div>
-        <canvas id="longRunningChart"></canvas>
-      </div>
-    </div>
-
-    <!-- 3. Active Queries (Main Event) -->
-    <div>
-      <div style="display: flex; justify-content: space-between; margin-bottom: 12px; align-items: flex-end;">
-        <h3 style="font-size: 1.1rem;">Active Queries</h3>
-        <span class="label" style="cursor: pointer;">View All &rarr;</span>
-      </div>
-
-      <div class="table-container">
-        <table id="active-queries-table">
-          <thead>
-            <tr>
-              <th style="width: 80px;">PID</th>
-              <th style="width: 100px;">User</th>
-              <th style="width: 80px;">Duration</th>
-              <th style="width: 140px;">Start Time</th>
-              <th>Query</th>
-              <th style="width: 120px; text-align: right;">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Populated by JS -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- 4. Locks & Blocking (Diagnostic) -->
-    <div id="locks-section" style="margin-top: 32px;">
-      <div style="margin-bottom: 12px;">
-        <h3 id="locks-title" style="font-size: 1.1rem; color: var(--fg-color);">Locks & Blocking</h3>
-      </div>
-      <div id="locks-table-container" class="table-container" style="border-color: var(--border-color);">
-        <table>
-          <thead>
-            <tr>
-              <th>Blocker (PID)</th>
-              <th>Waited By (PID)</th>
-              <th>Object</th>
-              <th>Mode</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Populated by JS -->
-          </tbody>
-        </table>
+        <div id="locks-tree-container" class="tree-view">
+          <!-- D3 or custom tree goes here -->
+        </div>
       </div>
     </div>
 
@@ -173,7 +192,7 @@
   </div>
 
   <script nonce="{{NONCE}}">
-    {{INLINE_SCRIPTS}}
+    /* INLINE_SCRIPTS */
   </script>
 </body>
 
