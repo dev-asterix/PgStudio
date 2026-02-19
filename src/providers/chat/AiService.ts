@@ -3,6 +3,7 @@
  */
 import * as vscode from 'vscode';
 import * as https from 'https';
+import * as http from 'http';
 import { ChatMessage } from './types';
 
 export class AiService {
@@ -212,16 +213,23 @@ Make these questions relevant to the topic discussed and progressively more adva
 
   async callDirectApi(provider: string, userMessage: string, config: vscode.WorkspaceConfiguration, customSystemPrompt?: string): Promise<{ text: string, usage?: string }> {
     const apiKey = config.get<string>('aiApiKey');
-    if (!apiKey) {
+    
+    // API key is required for most providers, but optional for custom endpoints
+    if (!apiKey && provider !== 'custom') {
       throw new Error(`API Key is required for ${provider} provider. Please configure postgresExplorer.aiApiKey.`);
     }
 
     let endpoint = '';
     let model = config.get<string>('aiModel');
     let headers: any = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
+      'Content-Type': 'application/json'
     };
+    
+    // Only add Authorization header if API key is provided
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+    
     let body: any = {};
 
     const systemPrompt = customSystemPrompt !== undefined ? customSystemPrompt : this.buildSystemPrompt();
@@ -311,6 +319,7 @@ Make these questions relevant to the topic discussed and progressively more adva
 
       const options: https.RequestOptions = {
         hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
         path: url.pathname + url.search,
         method: 'POST',
         headers: {
@@ -319,7 +328,8 @@ Make these questions relevant to the topic discussed and progressively more adva
         }
       };
 
-      const req = https.request(options, (res) => {
+      const protocol = url.protocol === 'https:' ? https : http;
+      const req = protocol.request(options, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
         res.on('end', () => {
