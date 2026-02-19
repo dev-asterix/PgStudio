@@ -1,7 +1,7 @@
 {
   "name": "postgres-explorer",
   "displayName": "PgStudio (PostgreSQL Explorer)",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "PostgreSQL database explorer for VS Code with notebook support",
   "publisher": "ric-v",
   "private": false,
@@ -879,7 +879,7 @@
       },
       {
         "command": "postgres-explorer.saveQueryToLibraryUI",
-        "title": "\ud83d\udcbe Save Query (UI Form)",
+        "title": "💾 Save Query (UI Form)",
         "icon": "$(save)",
         "category": "PgStudio: Queries"
       },
@@ -891,31 +891,31 @@
       },
       {
         "command": "postgres-explorer.loadSavedQueryUI",
-        "title": "\ud83d\udcc2 Load Saved Query",
+        "title": "📂 Load Saved Query",
         "icon": "$(folder-opened)",
         "category": "PgStudio: Queries"
       },
       {
         "command": "postgres-explorer.viewSavedQuery",
-        "title": "\ud83d\udccc View Saved Query",
+        "title": "📌 View Saved Query",
         "icon": "$(preview)",
         "category": "PgStudio: Queries"
       },
       {
         "command": "postgres-explorer.copySavedQuery",
-        "title": "\ud83d\udccb Copy Query",
+        "title": "📋 Copy Query",
         "icon": "$(copy)",
         "category": "PgStudio: Queries"
       },
       {
         "command": "postgres-explorer.editSavedQuery",
-        "title": "\u270f\ufe0f Edit Query",
+        "title": "✏️ Edit Query",
         "icon": "$(edit)",
         "category": "PgStudio: Queries"
       },
       {
         "command": "postgres-explorer.openSavedQueryInNotebook",
-        "title": "\ud83d\udcd8 Open in Notebook",
+        "title": "📘 Open in Notebook",
         "icon": "$(notebook)",
         "category": "PgStudio: Queries"
       },
