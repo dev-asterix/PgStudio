@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.8.4] - 2026-02-19
+## [0.8.4...0.8.5] - 2026-02-19
     
 ### Added
 - **Visual Table Designer**: A robust, interactive UI for creating tables. Define columns, data types, constraints, and foreign keys visually without writing SQL.
@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improved
 - **Stability**: Fixed dashboard template loading issues to ensure reliable rendering on all platforms.
+
+### Fixed
+- https://github.com/dev-asterix/PgStudio/issues/56 - Resolved local AI model API implementation with support for http and custom port.
 
 ---
 
