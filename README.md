@@ -43,6 +43,9 @@
 - 💾 **Saved Queries** — Tag-based organization, connection context restoration, AI metadata generation, edit & reuse
 - 🌳 **Database Explorer** — Browse tables, views, functions, types, FDWs
 - 🛠️ **Object Operations** — CRUD, scripts, VACUUM, ANALYZE, REINDEX
+- 🏗️ **Visual Table Designer** — Create/Edit tables with a robust GUI
+- 🔑 **Index & Constraint Manager** — Visual management of DB constraints
+- 📋 **Smart Paste** — Context-aware clipboard actions (SQL/CSV/JSON)
 - 📊 **Table Intelligence** — Profile, activity monitor, index usage, definition viewer
 - 🔍 **EXPLAIN CodeLens** — One-click query analysis directly in notebooks
 - 🛡️ **Auto-LIMIT** — Intelligent query protection (configurable, default 1000 rows)
