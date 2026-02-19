@@ -439,6 +439,8 @@ export class TableRenderer {
         this.rerenderTable();
       });
 
+      checkbox.addEventListener('paste', (e) => this.handlePaste(e, index, col));
+
       td.appendChild(checkbox);
       checkbox.focus();
     } else if (isJsonType) {
@@ -513,6 +515,8 @@ export class TableRenderer {
         }
       });
 
+      textarea.addEventListener('paste', (e) => this.handlePaste(e, index, col));
+
     } else {
       const input = document.createElement('input');
       input.type = 'text';
@@ -555,6 +559,7 @@ export class TableRenderer {
         if (e.key === 'Enter') { e.preventDefault(); saveEdit(); }
         else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
       });
+      input.addEventListener('paste', (e) => this.handlePaste(e, index, col));
     }
   }
 
@@ -586,16 +591,77 @@ export class TableRenderer {
     });
   }
 
+  private handlePaste(e: ClipboardEvent, startIndex: number, startCol: string) {
+    const clipboardData = e.clipboardData?.getData('text');
+    if (!clipboardData) return;
+
+    // If simple single-line string without tabs, let default paste happen
+    if (!clipboardData.includes('\t') && !clipboardData.includes('\n') && !clipboardData.includes('\r')) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Parse CSV/TSV
+    // Simple parser: split by newline then by tab (common for Excel/Sheets copy)
+    const rows = clipboardData.trim().split(/\r?\n/).map(r => r.split('\t'));
+
+    const colNames = this.columns;
+    const startColIdx = colNames.indexOf(startCol);
+    if (startColIdx === -1) return;
+
+    let rowsAdded = false;
+
+    rows.forEach((rowValues, rOffset) => {
+      const targetRowIdx = startIndex + rOffset;
+
+      // Expand rows if needed
+      if (targetRowIdx >= this.rows.length) {
+        this.rows.push({});
+        this.originalRows.push({}); // Maintain parallel array for diffs
+        rowsAdded = true;
+      }
+
+      rowValues.forEach((val, cOffset) => {
+        const targetColIdx = startColIdx + cOffset;
+        if (targetColIdx < colNames.length) {
+          const colName = colNames[targetColIdx];
+
+          // Handle "NULL" string as null value if preferred, or keep as string
+          // For now, keep as string/value.
+          // Trim quotes if Excel added them (Excel sometimes adds quotes for multiline/special chars)
+          let newValue: any = val;
+          if (newValue.startsWith('"') && newValue.endsWith('"')) {
+            newValue = newValue.slice(1, -1).replace(/""/g, '"');
+          }
+          if (newValue === '') newValue = null; // Empty string -> null often useful
+
+          const originalValue = this.originalRows[targetRowIdx][colName];
+          const cellKey = `${targetRowIdx}-${colName}`;
+
+          if (newValue != originalValue) {
+            this.modifiedCells.set(cellKey, { originalValue, newValue });
+            this.events.onDataChange?.(targetRowIdx, colName, newValue, originalValue);
+          }
+
+          this.rows[targetRowIdx][colName] = newValue;
+        }
+      });
+    });
+
+    this.currentlyEditingCell = null;
+    this.rerenderTable();
+  }
+
   public dispose() {
     // Cleanup IntersectionObserver
     if (this.loadMoreObserver) {
       this.loadMoreObserver.disconnect();
       this.loadMoreObserver = null;
     }
-    
+
     // Clear sentinel reference
     this.loadMoreSentinel = null;
-    
+
     // Clear DOM references
     this.tableBody = null;
     this.currentlyEditingCell = null;

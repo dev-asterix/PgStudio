@@ -45,6 +45,12 @@ export interface DashboardStats {
     blks_hit: number;
     deadlocks: number;
     conflicts: number;
+    temp_bytes: number;
+    temp_files: number;
+    checkpoints_timed: number;
+    checkpoints_req: number;
+    tuples_fetched: number;
+    tuples_returned: number;
   };
   pgStatStatements?: {
     query: string;
@@ -147,8 +153,9 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
         `, [dbName]),
 
     // Database Metrics (Throughput & I/O & Conflicts/Deadlocks)
+    // Select all columns to be robust against version differences (e.g. checkpoints_timed removed in PG 17)
     client.query(`
-            SELECT xact_commit, xact_rollback, blks_read, blks_hit, deadlocks, conflicts
+            SELECT *
             FROM pg_stat_database 
             WHERE datname = $1
         `, [dbName]),
@@ -156,7 +163,8 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
     // Settings (Max Connections)
     client.query(`SHOW max_connections`),
 
-    // pg_stat_statements (Top Queries)
+    // pg_stat_statements (Top Queries) - Safe selection that returns empty if extension missing
+    // We use a check to avoid error log spam if possible, or just let it fail gracefully via allSettled
     client.query(`
             SELECT query, calls, total_time, mean_time, rows
             FROM pg_stat_statements
@@ -203,7 +211,11 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
   const extCount = getResult(extRes).rows[0]?.count || 0;
   const activeQueriesRows = getResult(activeQueriesRes).rows;
   const locksRows = getResult(locksRes).rows;
-  const metricsRow = getResult(metricsRes).rows[0] || { xact_commit: 0, xact_rollback: 0, blks_read: 0, blks_hit: 0, deadlocks: 0, conflicts: 0 };
+  const metricsRow = getResult(metricsRes).rows[0] || {
+    xact_commit: 0, xact_rollback: 0, blks_read: 0, blks_hit: 0, deadlocks: 0, conflicts: 0,
+    temp_bytes: 0, temp_files: 0, checkpoints_timed: 0, checkpoints_req: 0,
+    tup_fetched: 0, tup_returned: 0
+  };
   const maxConnRow = getResult(settingsRes).rows[0] || { max_connections: '100' };
   const pgStatRows = getResult(pgStatRes).rows || [];
   const waitEventsRows = getResult(waitsRes).rows;
@@ -273,7 +285,13 @@ export async function fetchStats(client: Client | PoolClient, dbName: string): P
       blks_read: parseInt(metricsRow.blks_read || '0'),
       blks_hit: parseInt(metricsRow.blks_hit || '0'),
       deadlocks: parseInt(metricsRow.deadlocks || '0'),
-      conflicts: parseInt(metricsRow.conflicts || '0')
+      conflicts: parseInt(metricsRow.conflicts || '0'),
+      temp_bytes: parseInt(metricsRow.temp_bytes || '0'),
+      temp_files: parseInt(metricsRow.temp_files || '0'),
+      checkpoints_timed: parseInt(metricsRow.checkpoints_timed || '0'),
+      checkpoints_req: parseInt(metricsRow.checkpoints_req || '0'),
+      tuples_fetched: parseInt(metricsRow.tup_fetched || '0'),
+      tuples_returned: parseInt(metricsRow.tup_returned || '0')
     },
     pgStatStatements: pgStatRows.map((r: any) => ({
       query: r.query,

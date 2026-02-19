@@ -116,11 +116,11 @@
 ---
 
 ## ⚡ Phase 7: Advanced Power User & AI
-
-### AI Upgrades
 - [x] **Inject schema + breadcrumb into AI context**
-- [ ] **“Explain this result” / “Why slow?”**
-  - Implementation: Feed query execution plan or result summary to AI for analysis.
+- [ ] **“Why slow?” Performance Tracking**
+  - Implementation: Persistence layer for query performance baselines. Compare current execution vs historical average.
+- [ ] **Visual Explain Plan**
+  - Implementation: React-based tree/flowchart visualization for `EXPLAIN (FORMAT JSON)` results.
 - [ ] **Safer AI suggestions on prod connections**
   - Implementation: Prompt engineering to warn AI about production contexts.
 
@@ -134,12 +134,48 @@
 
 ---
 
+## 🎨 Phase 8: Visual Editors & Intelligence ✅ COMPLETE
+    
+- [x] **Visual Table Designer**
+  - Robust UI for creating/editing tables, columns, constraints, and foreign keys without SQL.
+- [x] **Visual Index & Constraint Manager**
+  - Dedicated UI for managing indexes and constraints, seeing usage stats, and dropping unused objects.
+- [x] **Smart Paste**
+  - Intelligent clipboard handling: detects CSV/JSON/SQL usage and offers context-aware actions (Insert Rows, Format).
+- [x] **Dashboard Diagnostics**
+  - Visual Lock Viewer (Tree view of blocking chains).
+  - Enhanced metrics (IO/Checkpoints/Temp Files).
+    
+---
+
+## 🛠️ Phase 9: Technical Health (Security & Refactoring)
+
+### Security Hardening
+- [ ] **Parameterize SQL Generation**
+  - Fix: Refactor `handleSaveChanges` and `handleDeleteRows` to use generic parameterized queries (`$1`, `$2`) instead of string interpolation to prevent SQL injection risks.
+- [ ] **Atomic Batch Operations**
+  - Fix: Wrap batch updates/deletes in explicit transactions to ensure all-or-nothing execution.
+
+### Architectural Improvements
+- [ ] **Refactor Message Handling**
+  - Fix: Extract `rendererMessaging.onDidReceiveMessage` logic into a dedicated `MessageHandler` registry or Command Pattern to reduce bloat in `extension.ts` and `NotebookKernel.ts`.
+- [ ] **End-to-End Testing**
+  - Fix: Setup Playwright/Selenium suite to verify Notebook UI interactions and Renderer communication.
+
+---
+
+## 🚀 Phase 10: Future & Collaboration
+
+- [ ] **Team Collaboration Features** (Shared queries, comments)
+- [ ] **Visual Database Designer** (ERD manipulation)
+- [ ] **Cloud Sync** (Settings/Connection profiles sync)
+
+---
+
 ## ❌ Intentionally Not Now
 
-- [ ] Visual query builder
-- [ ] ER diagrams
-- [ ] Full plan visualizers
-- [ ] Cloud sync / accounts
+- [ ] Full Visual Query Builder (complex UI burden)
+- [ ] User/Role Management UI (admin focus, low priority)
 
 ---
 

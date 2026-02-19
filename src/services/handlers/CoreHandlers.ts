@@ -51,6 +51,85 @@ export class ShowDatabaseSwitcherHandler implements IMessageHandler {
   }
 }
 
+export class ImportRequestHandler implements IMessageHandler {
+  async handle(message: any, context: { editor: vscode.NotebookEditor }) {
+    if (!context.editor) return;
+
+    const metadata = context.editor.notebook.metadata;
+    const connectionId = metadata?.connectionId;
+    if (!connectionId) {
+      vscode.window.showErrorMessage('No active connection found for this notebook.');
+      return;
+    }
+
+    const connection = ConnectionUtils.findConnection(connectionId);
+    if (!connection) {
+      vscode.window.showErrorMessage('Connection configuration not found.');
+      return;
+    }
+
+    const { table, schema, data } = message;
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      vscode.window.showWarningMessage('No data received for import.');
+      return;
+    }
+
+    const client = await import('../../services/ConnectionManager').then(m => m.ConnectionManager.getInstance().getPooledClient(connection));
+
+    try {
+      await client.query('BEGIN');
+
+      // Batch insert logic
+      const BATCH_SIZE = 100;
+      const columns = Object.keys(data[0]);
+      const quotedColumns = columns.map(c => `"${c}"`).join(', ');
+      const tableName = `"${schema}"."${table}"`;
+
+      let insertedCount = 0;
+
+      for (let i = 0; i < data.length; i += BATCH_SIZE) {
+        const batch = data.slice(i, i + BATCH_SIZE);
+        const values: any[] = [];
+        const placeholders: string[] = [];
+
+        batch.forEach((row, rowIndex) => {
+          const rowPlaceholders: string[] = [];
+          columns.forEach((col, colIndex) => {
+            rowPlaceholders.push(`$${values.length + 1}`);
+            values.push(row[col] ?? null);
+          });
+          placeholders.push(`(${rowPlaceholders.join(', ')})`);
+        });
+
+        const query = `INSERT INTO ${tableName} (${quotedColumns}) VALUES ${placeholders.join(', ')}`;
+        await client.query(query, values);
+        insertedCount += batch.length;
+      }
+
+      await client.query('COMMIT');
+      vscode.window.showInformationMessage(`Successfully imported ${insertedCount} rows into ${schema}.${table}.`);
+
+      // Notify renderer to refresh?
+      // Actually we just show message. The user might need to re-run query to see data.
+      // We could trigger a re-run if we had access to the cell, but we are in a handler.
+
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      vscode.window.showErrorMessage(`Import failed: ${err.message}`);
+      console.error('Import error:', err);
+    } finally {
+      client.release();
+    }
+  }
+
+  private rowsToCsv(rows: any[], columns: string[]): string {
+    // ... imported from somewhere else? or duplicate?
+    // Accessing private method from another class is impossible.
+    // ExportRequestHandler has rowsToCsv. ImportRequestHandler doesn't need it.
+    return '';
+  }
+}
+
 export class ExportRequestHandler implements IMessageHandler {
   async handle(message: any) {
     // This logic was in NotebookKernel previously

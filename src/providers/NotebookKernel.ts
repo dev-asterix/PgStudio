@@ -11,7 +11,7 @@ import {
   ExecuteUpdateBackgroundHandler, ScriptDeleteHandler, ExecuteUpdateHandler,
   CancelQueryHandler, DeleteRowsHandler, SaveChangesHandler
 } from '../services/handlers/QueryHandlers';
-import { ExportRequestHandler, ShowErrorMessageHandler } from '../services/handlers/CoreHandlers';
+import { ExportRequestHandler, ShowErrorMessageHandler, ImportRequestHandler } from '../services/handlers/CoreHandlers';
 import { SendToChatHandler } from '../services/handlers/ExplainHandlers';
 
 export class PostgresKernel implements vscode.Disposable {
@@ -34,7 +34,7 @@ export class PostgresKernel implements vscode.Disposable {
       this.label
     );
 
-    this._controller.supportedLanguages = this.supportedLanguages;
+    // this._controller.supportedLanguages = this.supportedLanguages; // Support all languages to avoid issues with detection
     this._controller.supportsExecutionOrder = true;
     this._controller.executeHandler = this._executeAll.bind(this);
 
@@ -66,6 +66,7 @@ export class PostgresKernel implements vscode.Disposable {
     registry.register('script_delete', new ScriptDeleteHandler());
     registry.register('execute_update', new ExecuteUpdateHandler());
     registry.register('export_request', new ExportRequestHandler());
+    registry.register('import_request', new ImportRequestHandler());
     registry.register('delete_row', new DeleteRowsHandler());
     registry.register('delete_rows', new DeleteRowsHandler());
     registry.register('sendToChat', new SendToChatHandler(undefined));

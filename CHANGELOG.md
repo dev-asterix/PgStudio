@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.4] - 2026-02-19
+    
+### Added
+- **Visual Table Designer**: A robust, interactive UI for creating tables. Define columns, data types, constraints, and foreign keys visually without writing SQL.
+- **Visual Index & Constraint Manager**: Manage indexes and constraints with a modern GUI. Analyze usage, drop unused indexes, and create new constraints with ease.
+- **Smart Paste**: Intelligent clipboard handling that detects SQL, CSV, or JSON content and offers context-aware actions (e.g., "Insert as Rows", "Format SQL").
+- **Dashboard Improvements**:
+    - **Visual Lock Viewer**: Diagnostic tree view to identify and resolve blocking chains and deadlocks.
+    - **Enhanced Metrics**: Real-time charts for IO, Checkpoints, and System Load.
+    - **Active Query Management**: Kill/Cancel blocking queries directly from the dashboard.
+
+### Improved
+- **Stability**: Fixed dashboard template loading issues to ensure reliable rendering on all platforms.
+
+---
+
 ## [0.8.3] - 2026-02-14
 
 ### Added

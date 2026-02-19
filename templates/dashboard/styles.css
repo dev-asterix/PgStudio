@@ -108,10 +108,46 @@ h3 {
   font-size: 0.9rem;
 }
 
+/* --- Tabs --- */
+.tabs-nav {
+  display: flex;
+  border-bottom: 2px solid var(--border-color);
+  margin-bottom: 20px;
+}
+
+.tab {
+  padding: 8px 16px;
+  cursor: pointer;
+  opacity: 0.6;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  opacity: 1;
+  color: var(--fg-color);
+}
+
+.tab.active {
+  opacity: 1;
+  border-bottom-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
 /* --- Charts Area --- */
 .charts-row {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 24px;
 }
 
@@ -127,6 +163,7 @@ h3 {
   border: var(--card-border);
   border-radius: var(--card-radius);
   overflow: hidden;
+  overflow-x: auto;
 }
 
 table {
@@ -142,6 +179,7 @@ th {
   font-weight: 500;
   color: var(--muted-color);
   font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 td {
@@ -151,51 +189,24 @@ td {
 
 tr.row-crit {
   background: rgba(248, 113, 113, 0.15);
-  /* Darker red */
 }
 
 tr.row-warn {
   background: rgba(250, 204, 21, 0.1);
 }
 
-.actions-cell {
-  text-align: right;
-}
-
-.btn-action {
-  background: transparent;
+/* --- Lock Tree Visualizer --- */
+.lock-node {
   border: 1px solid var(--border-color);
-  color: var(--muted-color);
-  padding: 4px 8px;
+  margin: 8px 0;
+  padding: 12px;
   border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.75rem;
 }
 
-.btn-action:hover {
-  color: var(--fg-color);
-  border-color: var(--accent-color);
-}
-
-.btn-danger {
-  color: var(--danger-color);
-  border-color: rgba(248, 113, 113, 0.3);
-}
-
-.btn-danger:hover {
-  background: var(--danger-color);
-  color: white;
-}
-
-/* Duplicated rule in original, keeping single logic */
-.btn-warn {
-  color: var(--warning-color);
-  border-color: rgba(250, 204, 21, 0.3);
-}
-
-.btn-warn:hover {
-  background: var(--warning-color);
-  color: black;
+.lock-children {
+  margin-left: 24px;
+  border-left: 2px solid var(--border-color);
+  padding-left: 12px;
 }
 
 /* --- Detail View --- */

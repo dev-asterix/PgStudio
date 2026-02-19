@@ -136,6 +136,8 @@ export class DashboardPanel {
     }
   }
 
+
+
   private async _update() {
     let client;
     try {

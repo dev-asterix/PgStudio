@@ -765,3 +765,33 @@ CREATE INDEX idx_logs_created_at ON ${schema}.logs(created_at);`)
       .show();
   });
 }
+
+export async function cmdQuickCloneTable(item: DatabaseTreeItem, context: vscode.ExtensionContext) {
+  await CommandBase.run(context, item, 'create quick clone notebook', async (conn, client, metadata) => {
+    const schema = item.schema!;
+    const table = item.label!;
+    const newTableName = `${table}_copy`;
+
+    await new NotebookBuilder(metadata)
+      .addMarkdown(
+        MarkdownUtils.header(`👯 Quick Clone: \`${schema}.${table}\``) +
+        MarkdownUtils.infoBox('This script creates a complete copy of the table structure (including indexes and constraints) and data.') +
+        `\n\n#### 📝 Naming Collision\n\n` +
+        MarkdownUtils.warningBox(`The script uses \`${newTableName}\` as the new table name. If this name already exists, the script will fail. Change the name in the script if needed.`)
+      )
+      .addMarkdown('##### 📋 Clone Structure & Data')
+      .addSql(`-- 1. Create new table with same structure (indexes, constraints, defaults)
+CREATE TABLE ${schema}.${newTableName} (LIKE ${schema}.${table} INCLUDING ALL);
+
+-- 2. Copy all data
+INSERT INTO ${schema}.${newTableName} 
+SELECT * FROM ${schema}.${table};
+
+-- 3. (Optional) Reset sequences if needed
+-- If the original table used a sequence, the new table might point to the same sequence or need a new one.
+-- 'INCLUDING ALL' copies defaults, so if default is nextval('seq'), both tables share the sequence.
+-- You might want to create a new sequence for the copy.
+`)
+      .show();
+  });
+}
