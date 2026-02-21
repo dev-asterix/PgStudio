@@ -537,7 +537,7 @@ Then provide the SQL query. Remember: NO markdown formatting, just the raw SQL (
 const AiTaskSelector = {
   tasks: [
     // Custom - Always First
-    { label: '$(edit) Custom Instruction', description: 'Enter your own instruction', detail: 'Tell the AI exactly what you want to do with this query', kind: vscode.QuickPickItemKind.Default },
+    { label: '$(edit) Custom Instruction', description: 'Enter your own instruction', detail: 'Tell the AI exactly what you want to do with this query' },
 
     // Separator
     { label: '', kind: vscode.QuickPickItemKind.Separator },

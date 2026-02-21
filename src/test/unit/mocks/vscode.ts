@@ -1,3 +1,46 @@
+// Minimal mock of VS Code API for unit tests
+export const EventEmitter = class<T> {
+  private listeners: Function[] = [];
+  event = (listener: Function) => { this.listeners.push(listener); return { dispose: () => {} }; };
+  fire = (arg?: any) => { this.listeners.forEach(l => l(arg)); };
+};
+
+export const Uri = {
+  file: (path: string) => ({ fsPath: path, toString: () => `file://${path}` }),
+  joinPath: (...parts: string[]) => ({ fsPath: parts.join('/'), toString: () => parts.join('/') })
+};
+
+export const workspace: any = {
+  getConfiguration: () => ({ get: () => undefined, update: () => Promise.resolve() }),
+  onDidChangeConfiguration: () => ({ dispose: () => {} }),
+  fs: {
+    readFile: async () => Buffer.from(''),
+    writeFile: async () => {}
+  }
+};
+
+export const window: any = {
+  showInformationMessage: () => Promise.resolve(undefined),
+  showErrorMessage: () => Promise.resolve(undefined),
+  showQuickPick: () => Promise.resolve(undefined),
+  createOutputChannel: () => ({ appendLine: () => {}, show: () => {} })
+};
+
+export const commands: any = {
+  registerCommand: () => ({ dispose: () => {} }),
+  executeCommand: async () => {}
+};
+
+export const notebooks: any = {
+  createNotebookController: () => ({ dispose: () => {} }),
+};
+
+export const env: any = {};
+export const languages: any = {};
+
+// export default namespace style
+const vscode = { EventEmitter, Uri, workspace, window, commands, notebooks, env, languages } as any;
+export default vscode;
 import * as sinon from 'sinon';
 
 
@@ -48,11 +91,13 @@ export const notebooks = {
   })
 };
 
-export enum TreeItemCollapsibleState {
-  None = 0,
-  Collapsed = 1,
-  Expanded = 2
-}
+export const TreeItemCollapsibleState = {
+  None: 0,
+  Collapsed: 1,
+  Expanded: 2
+} as const;
+
+export type TreeItemCollapsibleState = typeof TreeItemCollapsibleState[keyof typeof TreeItemCollapsibleState];
 
 export class TreeItem {
   constructor(public label: string, public collapsibleState?: TreeItemCollapsibleState) { }
@@ -108,41 +153,45 @@ export const languages = {
   registerCompletionItemProvider: () => ({ dispose: () => { } })
 };
 
-export enum NotebookCellKind {
-  Markup = 1,
-  Code = 2
-}
+export const NotebookCellKind = {
+  Markup: 1,
+  Code: 2
+} as const;
+
+export type NotebookCellKind = typeof NotebookCellKind[keyof typeof NotebookCellKind];
 
 
-export enum CompletionItemKind {
-  Text = 0,
-  Method = 1,
-  Function = 2,
-  Constructor = 3,
-  Field = 4,
-  Variable = 5,
-  Class = 6,
-  Interface = 7,
-  Module = 8,
-  Property = 9,
-  Unit = 10,
-  Value = 11,
-  Enum = 12,
-  Keyword = 13,
-  Snippet = 14,
-  Color = 15,
-  File = 16,
-  Reference = 17,
-  Folder = 18,
-  EnumMember = 19,
-  Constant = 20,
-  Struct = 21,
-  Event = 22,
-  Operator = 23,
-  TypeParameter = 24,
-  User = 25,
-  Issue = 26,
-}
+export const CompletionItemKind = {
+  Text: 0,
+  Method: 1,
+  Function: 2,
+  Constructor: 3,
+  Field: 4,
+  Variable: 5,
+  Class: 6,
+  Interface: 7,
+  Module: 8,
+  Property: 9,
+  Unit: 10,
+  Value: 11,
+  Enum: 12,
+  Keyword: 13,
+  Snippet: 14,
+  Color: 15,
+  File: 16,
+  Reference: 17,
+  Folder: 18,
+  EnumMember: 19,
+  Constant: 20,
+  Struct: 21,
+ Event: 22,
+  Operator: 23,
+  TypeParameter: 24,
+  User: 25,
+  Issue: 26,
+} as const;
+
+export type CompletionItemKind = typeof CompletionItemKind[keyof typeof CompletionItemKind];
 
 export class CompletionItem {
   detail?: string;

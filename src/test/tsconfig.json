@@ -6,7 +6,7 @@
         "baseUrl": ".",
         "paths": {
             "vscode": [
-                "unit/mocks/vscode.ts"
+                "unit/mocks/vscode"
             ]
         },
         "types": [
@@ -16,9 +16,20 @@
             "sinon"
         ],
         "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true
+        "allowSyntheticDefaultImports": true,
+        "allowJs": true
+    },
+    "ts-node": {
+        "compilerOptions": {
+            "module": "commonjs"
+        },
+        "require": ["tsconfig-paths/register"]
     },
     "include": [
-        "**/*.ts"
+        "./**/*.ts",
+        "./**/*.js"
+    ],
+    "exclude": [
+        "../../node_modules"
     ]
 }
